@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}หน้าหลัก{% endblock %}
+{% block page_heading %}หน้าหลัก{% endblock %}
+
+{% block content %}
+<!-- ✅ ส่วนแสดงบทความเด่น -->
+{% if title_contents %}
+<div class="container mt-5">
+    <h2 class="text-center text-success">🌟 </h2>
+    <div class="row">
+        {% for item in title_contents %}
+        <div class="col-md-12 mb-4">
+            <div class="card shadow-sm border-success">
+                <div class="card-body">
+                    <h3 class="text-success"><i class="fa-solid fa-star text-warning"></i> {{ item.heading }}</h3>
+                    <p class="text-dark fs-5" style="line-height: 1.6;">{{ item.content | safe }}</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ✅ ส่วนแสดงหมวดหมู่หลัก -->
+<div class="container mt-5">
+    <h2 class="text-center text-primary">📂 หมวดหมู่หลัก</h2>
+    <div class="row">
+        {% for category_id, category_data in categories %}
+        <div class="col-md-4 mb-3">
+            <div class="card category-card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">{{ category_data["name"] }}</h5>
+                    {% if category_data["subcategories"] %}
+                    <ul class="list-group">
+                        {% for sub_id, sub_name in category_data["subcategories"] %}
+                        <li class="list-group-item">
+                            <a href="{{ url_for('service.service', category_id=sub_id) }}" class="text-decoration-none">
+                                <i class="fas fa-folder"></i> {{ sub_name }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted">ไม่มีหมวดหมู่ย่อย</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- ✅ บทความล่าสุด -->
+<div class="container mt-5">
+    <h2 class="text-center text-secondary">📰 บทความล่าสุด</h2>
+    <ul class="list-group">
+        {% for id, title in latest_articles %}
+        <li class="list-group-item">
+            <a href="{{ url_for('content.content', article_id=id) }}" class="text-decoration-none">
+                <i class="fas fa-file-alt"></i> {{ title }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

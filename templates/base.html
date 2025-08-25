@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}เว็บไซต์ของคุณ{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+      background-color: #f4f6f9;
+    }
+    .info-topbar {
+      background: #f8f9fa;
+      border-bottom: 1px solid #ccc;
+      padding: 10px 20px;
+      font-size: 0.9rem;
+    }
+    .user-profile {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      margin-right: 5px;
+    }
+  </style>
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+
+<!-- Greeting + Clock -->
+<div class="info-topbar text-center">
+  <div id="clockbox" class="mb-1 text-muted">🕓</div>
+  <div id="greetingbox" class="mb-1">👋</div>
+
+  {% if user %}
+    <div class="text-dark mb-1">
+      {% if user.profile_picture %}
+        <img src="{{ url_for('static', filename='uploads/' ~ user.profile_picture) }}" class="user-profile" alt="profile">
+      {% endif %}
+      👤 {{ user.firstname }} {{ user.lastname }} ({{ user.rank }})
+    </div>
+  {% else %}
+    <div class="text-danger mb-1">🔒 คุณยังไม่ได้เข้าสู่ระบบ</div>
+  {% endif %}
+</div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+  <div class="container">
+    <a class="navbar-brand" href="{{ url_for('home.home') }}">เว็บไซต์ของคุณ</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarMain">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('index2') }}">ฟอรั่ม</a></li>
+        {% if 'user_id' in session %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('account') }}">บัญชีของฉัน</a></li>
+          {% if user.rank == 'user_administrator_and_manage_systems' %}
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('manage_users') }}">จัดการบัญชี</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}">จัดการบทความ</a></li>
+          {% elif user.rank == 'user_admin' %}
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}">จัดการบทความ</a></li>
+          {% endif %}
+          <li class="nav-item"><a class="nav-link text-warning" href="{{ url_for('logout') }}">ออกจากระบบ</a></li>
+        {% else %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">เข้าสู่ระบบ</a></li>
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('register') }}">สมัครสมาชิก</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero Section -->
+<div class="bg-light py-4 shadow-sm border-bottom">
+  <div class="container text-center">
+    <h1 class="text-primary">📌 ตอนนี้คุณกำลังเยี่ยมชมอยู่หน้า: {{ self.title() | safe }}</h1>
+
+    {% block page_description %}{% endblock %}
+
+    <!-- Search Bar -->
+    <div class="row justify-content-center mt-4">
+      <div class="col-md-8 col-lg-6">
+        <form class="d-flex" action="{{ url_for('search.search') }}" method="GET">
+          <input class="form-control me-2" type="search" name="q" placeholder="🔍 ค้นหาบทความ..." aria-label="Search">
+          <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i> ค้นหา</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="container mt-4">
+  {% block content %}{% endblock %}
+</div>
+
+<!-- Footer -->
+<footer class="text-center mt-5 bg-dark text-white py-3">
+  <p>© 2025 เว็บไซต์ของคุณ | <a href="#" class="text-light">นโยบายความเป็นส่วนตัว</a></p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function GetClock() {
+    const d = new Date();
+    let nhour = d.getHours();
+    const nmin = d.getMinutes().toString().padStart(2, '0');
+    const nsec = d.getSeconds().toString().padStart(2, '0');
+    const ap = nhour < 12 ? " AM" : " PM";
+    if (nhour === 0) nhour = 12;
+    else if (nhour > 12) nhour -= 12;
+    const timeString = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+    document.getElementById('clockbox').innerHTML = timeString;
+    let greeting;
+    if (d.getHours() < 12) greeting = "สวัสดีตอนเช้าครับ🙏";
+    else if (d.getHours() === 12) greeting = "สวัสดีตอนเที่ยงครับ🙏";
+    else if (d.getHours() >= 13 && d.getHours() <= 17) greeting = "สวัสดีตอนบ่าย🙏";
+    else greeting = "สวัสดีตอนเย็น🙏";
+    document.getElementById('greetingbox').innerHTML = greeting;
+    setTimeout(GetClock, 1000);
+  }
+  window.onload = GetClock;
+</script>
+</body>
+</html>

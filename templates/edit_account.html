@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>แก้ไขข้อมูลส่วนตัว</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>แก้ไขข้อมูลส่วนตัว</h1>
+        <form action="{{ url_for('account.edit_account') }}" method="POST" enctype="multipart/form-data">
+            <label for="firstname">ชื่อ:</label>
+            <input type="text" name="firstname" value="{{ user['firstname'] }}" required>
+            
+            <label for="lastname">นามสกุล:</label>
+            <input type="text" name="lastname" value="{{ user['lastname'] }}" required>
+
+            <label for="email">อีเมล:</label>
+            <input type="email" name="email" value="{{ user['email'] }}" required>
+
+            <label for="phone">เบอร์โทรศัพท์:</label>
+            <input type="text" name="phone" value="{{ user['phone'] }}" required>
+
+            <label for="address_permanent">ที่อยู่ตามทะเบียนบ้าน:</label>
+            <input type="text" name="address_permanent" value="{{ user['address_permanent'] }}" required>
+
+            <label for="address_current">ที่อยู่ปัจจุบัน:</label>
+            <input type="text" name="address_current" value="{{ user['address_current'] }}" required>
+
+            <label for="dob">วันเดือนปีเกิด:</label>
+            <input type="date" name="dob" value="{{ user['dob'] }}" required>
+
+            <label for="profile_picture">อัปโหลดรูปโปรไฟล์ใหม่:</label>
+            <input type="file" name="profile_picture" accept="image/*">
+
+            <input type="submit" value="อัปเดตข้อมูล">
+        </form>
+
+        <a href="{{ url_for('account.account') }}">ย้อนกลับ</a>
+    </div>
+</body>
+</html>

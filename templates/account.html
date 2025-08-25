@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>บัญชีของคุณ</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>บัญชีของคุณ</h1>
+        <p>ชื่อ: {{ user['firstname'] }} {{ user['lastname'] }}</p>
+        <p>อีเมล: {{ user['email'] }}</p>
+        <p>เบอร์โทรศัพท์: {{ user['phone'] }}</p>
+        <p>ที่อยู่ตามทะเบียนบ้าน: {{ user['address_permanent'] }}</p>
+        <p>ที่อยู่ปัจจุบัน: {{ user['address_current'] }}</p>
+        <p>วันเดือนปีเกิด: {{ user['dob'] }}</p>
+
+        <!-- แสดงรูปโปรไฟล์ถ้ามี -->
+        {% if user['profile_picture'] %}
+        <p>รูปโปรไฟล์:</p>
+        <img src="{{ url_for('static', filename='uploads/' + user['profile_picture']) }}" alt="Profile Picture" width="150">
+        {% endif %}
+
+        <a href="{{ url_for('account.edit_account') }}">แก้ไขข้อมูล</a>
+        <a href="{{ url_for('logout') }}">ออกจากระบบ</a>
+
+    </div>
+</body>
+</html>

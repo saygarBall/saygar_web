@@ -1,0 +1,1179 @@
+#404.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>ไม่พบหน้า</title>
+</head>
+<body>
+    <h1>404 - ไม่พบหน้า</h1>
+    <p>ขออภัย เราไม่พบหน้าที่คุณกำลังหา</p>
+    <a href="{{ url_for('home.home') }}">กลับไปหน้าแรก</a>
+</body>
+</html>
+
+#500.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>เกิดข้อผิดพลาด</title>
+</head>
+<body>
+    <h1>500 - เกิดข้อผิดพลาดภายในระบบ</h1>
+    <p>มีปัญหากับเซิร์ฟเวอร์ โปรดลองอีกครั้งในภายหลัง</p>
+    <a href="{{ url_for('home.home') }}">กลับไปหน้าแรก</a>
+</body>
+</html>
+
+#account.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>บัญชีของคุณ</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>บัญชีของคุณ</h1>
+        <p>ชื่อ: {{ user['firstname'] }} {{ user['lastname'] }}</p>
+        <p>อีเมล: {{ user['email'] }}</p>
+        <p>เบอร์โทรศัพท์: {{ user['phone'] }}</p>
+        <p>ที่อยู่ตามทะเบียนบ้าน: {{ user['address_permanent'] }}</p>
+        <p>ที่อยู่ปัจจุบัน: {{ user['address_current'] }}</p>
+        <p>วันเดือนปีเกิด: {{ user['dob'] }}</p>
+
+        <!-- แสดงรูปโปรไฟล์ถ้ามี -->
+        {% if user['profile_picture'] %}
+        <p>รูปโปรไฟล์:</p>
+        <img src="{{ url_for('static', filename='uploads/' + user['profile_picture']) }}" alt="Profile Picture" width="150">
+        {% endif %}
+
+        <a href="{{ url_for('account.edit_account') }}">แก้ไขข้อมูล</a>
+        <a href="{{ url_for('logout') }}">ออกจากระบบ</a>
+
+    </div>
+</body>
+</html>
+
+#add_article.html
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4">📝 เพิ่มบทความใหม่</h2>
+    <form method="POST" action="{{ url_for('add_article') }}">
+        <div class="mb-3">
+            <label for="title" class="form-label">ชื่อบทความ</label>
+            <input type="text" class="form-control" id="title" name="title" required>
+        </div>
+        <div class="mb-3">
+            <label for="content" class="form-label">เนื้อหา</label>
+            <textarea class="form-control" id="content" name="content" rows="8" required></textarea>
+        </div>
+        <div class="mb-3">
+            <label for="category_id" class="form-label">หมวดหมู่</label>
+            <select class="form-select" id="category_id" name="category_id" required>
+                {% for id, name in categories %}
+                <option value="{{ id }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-success">✅ บันทึกบทความ</button>
+    </form>
+</div>
+{% endblock %}
+
+#admin.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Admin - อัปเดตข้อมูลข่าวสาร</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+      <h1>Admin - อัปเดตข้อมูลข่าวสาร</h1>
+      <form action="/post_update" method="POST">
+          <label for="content">เนื้อหา:</label><br>
+          <textarea id="content" name="content" rows="5" cols="50"></textarea><br>
+          <button type="submit">โพสต์</button>
+      </form>
+    </div>
+</body>
+</html>
+
+#admin_dashboard.html
+{% extends "base.html" %}
+
+{% block title %}แผงควบคุมผู้ดูแล{% endblock %}
+
+{% block content %}
+<h2 class="text-primary">🛠 แผงควบคุมผู้ดูแลระบบ</h2>
+<hr>
+<a href="{{ url_for('add_article') }}" class="btn btn-outline-success btn-sm">➕ เพิ่มบทความ</a>
+
+<h4>📋 รายการบทความ</h4>
+<table class="table table-bordered table-hover">
+    <thead class="table-light">
+        <tr>
+            <th>ไอดี</th>
+            <th>ชื่อบทความ</th>
+            <th>มีเสียง</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for article in articles %}
+        <tr>
+            <td>{{ article.id }}</td>
+            <td>{{ article.title }}</td>
+            <td>
+                {% if article.tts_exists %}
+                    ✅
+                {% else %}
+                    ❌
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+
+#base.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}เว็บไซต์ของคุณ{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+      background-color: #f4f6f9;
+    }
+    .info-topbar {
+      background: #f8f9fa;
+      border-bottom: 1px solid #ccc;
+      padding: 10px 20px;
+      font-size: 0.9rem;
+    }
+    .user-profile {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      margin-right: 5px;
+    }
+  </style>
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+
+<!-- Greeting + Clock -->
+<div class="info-topbar text-center">
+  <div id="clockbox" class="mb-1 text-muted">🕓</div>
+  <div id="greetingbox" class="mb-1">👋</div>
+
+  {% if user %}
+    <div class="text-dark mb-1">
+      {% if user.profile_picture %}
+        <img src="{{ url_for('static', filename='uploads/' ~ user.profile_picture) }}" class="user-profile" alt="profile">
+      {% endif %}
+      👤 {{ user.firstname }} {{ user.lastname }} ({{ user.rank }})
+    </div>
+  {% else %}
+    <div class="text-danger mb-1">🔒 คุณยังไม่ได้เข้าสู่ระบบ</div>
+  {% endif %}
+</div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+  <div class="container">
+    <a class="navbar-brand" href="{{ url_for('home.home') }}">เว็บไซต์ของคุณ</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarMain">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('index2') }}">ฟอรั่ม</a></li>
+        {% if 'user_id' in session %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('account') }}">บัญชีของฉัน</a></li>
+          {% if user.rank == 'user_administrator_and_manage_systems' %}
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('manage_users') }}">จัดการบัญชี</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}">จัดการบทความ</a></li>
+          {% elif user.rank == 'user_admin' %}
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}">จัดการบทความ</a></li>
+          {% endif %}
+          <li class="nav-item"><a class="nav-link text-warning" href="{{ url_for('logout') }}">ออกจากระบบ</a></li>
+        {% else %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">เข้าสู่ระบบ</a></li>
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('register') }}">สมัครสมาชิก</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero Section -->
+<div class="bg-light py-4 shadow-sm border-bottom">
+  <div class="container text-center">
+    <h1 class="text-primary">📌 ตอนนี้คุณกำลังเยี่ยมชมอยู่หน้า: {{ self.title() | safe }}</h1>
+
+    {% block page_description %}{% endblock %}
+
+    <!-- Search Bar -->
+    <div class="row justify-content-center mt-4">
+      <div class="col-md-8 col-lg-6">
+        <form class="d-flex" action="{{ url_for('search.search') }}" method="GET">
+          <input class="form-control me-2" type="search" name="q" placeholder="🔍 ค้นหาบทความ..." aria-label="Search">
+          <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i> ค้นหา</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="container mt-4">
+  {% block content %}{% endblock %}
+</div>
+
+<!-- Footer -->
+<footer class="text-center mt-5 bg-dark text-white py-3">
+  <p>© 2025 เว็บไซต์ของคุณ | <a href="#" class="text-light">นโยบายความเป็นส่วนตัว</a></p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function GetClock() {
+    const d = new Date();
+    let nhour = d.getHours();
+    const nmin = d.getMinutes().toString().padStart(2, '0');
+    const nsec = d.getSeconds().toString().padStart(2, '0');
+    const ap = nhour < 12 ? " AM" : " PM";
+    if (nhour === 0) nhour = 12;
+    else if (nhour > 12) nhour -= 12;
+    const timeString = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+    document.getElementById('clockbox').innerHTML = timeString;
+    let greeting;
+    if (d.getHours() < 12) greeting = "สวัสดีตอนเช้าครับ🙏";
+    else if (d.getHours() === 12) greeting = "สวัสดีตอนเที่ยงครับ🙏";
+    else if (d.getHours() >= 13 && d.getHours() <= 17) greeting = "สวัสดีตอนบ่าย🙏";
+    else greeting = "สวัสดีตอนเย็น🙏";
+    document.getElementById('greetingbox').innerHTML = greeting;
+    setTimeout(GetClock, 1000);
+  }
+  window.onload = GetClock;
+</script>
+</body>
+</html>
+
+#content.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        img { max-width: 100%; height: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        table, th, td { border: 1px solid black; padding: 8px; text-align: left; }
+        pre { white-space: pre-wrap; font-family: monospace; }
+    </style>
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('home.home') }}">หน้าแรก</a>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('home.home') }}">หน้าแรก</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ title }}</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="container mt-4">
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <h1 class="card-title text-primary">{{ title }}</h1>
+            <hr>
+
+            {% if content.startswith("media_file=") %}
+                {% set media_file = content.split("=")[1].strip() %}
+                {% set media_url = url_for('media_file', filename=media_file) %}
+                <p><strong>URL ของไฟล์:</strong> <a href="{{ media_url }}" target="_blank">{{ media_url }}</a></p>
+                {% set ext = media_file.split('.')[-1].lower() %}
+
+                {% if ext in ["mp3", "wav", "ogg"] %}
+                    <audio id="media_player" controls preload="metadata">
+                        <source src="{{ media_url }}" type="audio/{{ ext }}">
+                        เบราว์เซอร์ของคุณไม่รองรับการเล่นไฟล์เสียง
+                    </audio>
+                {% elif ext in ["mp4", "mov"] %}
+                    <video id="media_player" width="600" controls>
+                        <source src="{{ media_url }}" type="video/{{ ext }}">
+                        เบราว์เซอร์ของคุณไม่รองรับการเล่นวิดีโอ
+                    </video>
+                {% endif %}
+            {% else %}
+                <div class="card-text">{{ content | safe }}</div>
+
+                <!-- 🔊 เพิ่มระบบ TTS -->
+                <div class="d-flex justify-content-center mt-4">
+                    {% if tts_url %}
+                        <div class="text-center">
+                            <h5>🔊 ฟังเสียงบทความ</h5>
+                            <audio id="tts_audio" controls>
+                                <source src="{{ tts_url }}" type="audio/mpeg">
+                                ไม่สามารถเล่นเสียงได้
+                            </audio>
+                            <script>
+                                const audio = document.getElementById("tts_audio");
+                                audio.playbackRate = 1.5;  // ✅ ปรับความเร็วที่นี่ (1.0 = ปกติ, 1.2 = เร็วขึ้นนิดนึง)
+                            </script>
+                        </div>
+                    {% else %}
+                        <form action="{{ url_for('content.generate_tts', article_id=article_id) }}" method="get">
+                            <button type="submit" class="btn btn-primary">🔊 สร้างเสียงอ่านบทความ</button>
+                        </form>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<button onclick="topFunction()" id="backToTop" class="btn btn-primary rounded-circle position-fixed bottom-0 end-0 m-3" style="display: none;">⬆</button>
+
+<footer class="bg-dark text-white text-center py-3 mt-5">
+    <p>© 2025 เว็บไซต์ของคุณ. สงวนลิขสิทธิ์.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let backToTopButton = document.getElementById("backToTop");
+    window.onscroll = function() {
+        backToTopButton.style.display = (document.documentElement.scrollTop > 200) ? "block" : "none";
+    };
+    function topFunction() {
+        document.documentElement.scrollTop = 0;
+    }
+</script>
+</body>
+</html>
+
+#edit_account.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>แก้ไขข้อมูลส่วนตัว</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>แก้ไขข้อมูลส่วนตัว</h1>
+        <form action="{{ url_for('account.edit_account') }}" method="POST" enctype="multipart/form-data">
+            <label for="firstname">ชื่อ:</label>
+            <input type="text" name="firstname" value="{{ user['firstname'] }}" required>
+            
+            <label for="lastname">นามสกุล:</label>
+            <input type="text" name="lastname" value="{{ user['lastname'] }}" required>
+
+            <label for="email">อีเมล:</label>
+            <input type="email" name="email" value="{{ user['email'] }}" required>
+
+            <label for="phone">เบอร์โทรศัพท์:</label>
+            <input type="text" name="phone" value="{{ user['phone'] }}" required>
+
+            <label for="address_permanent">ที่อยู่ตามทะเบียนบ้าน:</label>
+            <input type="text" name="address_permanent" value="{{ user['address_permanent'] }}" required>
+
+            <label for="address_current">ที่อยู่ปัจจุบัน:</label>
+            <input type="text" name="address_current" value="{{ user['address_current'] }}" required>
+
+            <label for="dob">วันเดือนปีเกิด:</label>
+            <input type="date" name="dob" value="{{ user['dob'] }}" required>
+
+            <label for="profile_picture">อัปโหลดรูปโปรไฟล์ใหม่:</label>
+            <input type="file" name="profile_picture" accept="image/*">
+
+            <input type="submit" value="อัปเดตข้อมูล">
+        </form>
+
+        <a href="{{ url_for('account.account') }}">ย้อนกลับ</a>
+    </div>
+</body>
+</html>
+
+#edit_post.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>edit post</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+  <h1>แก้ไขโพสต์: {{ post_title }}</h1>
+  <form method="POST">
+      <textarea name="new_content" required>{{ post_content }}</textarea>
+      <button type="submit">บันทึกการแก้ไข</button>
+  </form>
+    </div>
+</body>
+</html>
+
+#index.html
+{% extends "base.html" %}
+
+{% block title %}หน้าหลัก{% endblock %}
+{% block page_heading %}หน้าหลัก{% endblock %}
+
+{% block content %}
+<!-- ✅ ส่วนแสดงบทความเด่น -->
+{% if title_contents %}
+<div class="container mt-5">
+    <h2 class="text-center text-success">🌟 </h2>
+    <div class="row">
+        {% for item in title_contents %}
+        <div class="col-md-12 mb-4">
+            <div class="card shadow-sm border-success">
+                <div class="card-body">
+                    <h3 class="text-success"><i class="fa-solid fa-star text-warning"></i> {{ item.heading }}</h3>
+                    <p class="text-dark fs-5" style="line-height: 1.6;">{{ item.content | safe }}</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ✅ ส่วนแสดงหมวดหมู่หลัก -->
+<div class="container mt-5">
+    <h2 class="text-center text-primary">📂 หมวดหมู่หลัก</h2>
+    <div class="row">
+        {% for category_id, category_data in categories %}
+        <div class="col-md-4 mb-3">
+            <div class="card category-card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">{{ category_data["name"] }}</h5>
+                    {% if category_data["subcategories"] %}
+                    <ul class="list-group">
+                        {% for sub_id, sub_name in category_data["subcategories"] %}
+                        <li class="list-group-item">
+                            <a href="{{ url_for('service.service', category_id=sub_id) }}" class="text-decoration-none">
+                                <i class="fas fa-folder"></i> {{ sub_name }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted">ไม่มีหมวดหมู่ย่อย</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- ✅ บทความล่าสุด -->
+<div class="container mt-5">
+    <h2 class="text-center text-secondary">📰 บทความล่าสุด</h2>
+    <ul class="list-group">
+        {% for id, title in latest_articles %}
+        <li class="list-group-item">
+            <a href="{{ url_for('content.content', article_id=id) }}" class="text-decoration-none">
+                <i class="fas fa-file-alt"></i> {{ title }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}
+
+#index2.html
+{% extends "base.html" %}
+
+{% block title %}Forum{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-primary">📢 Forum</h1>
+    <div id="greetingbox" class="my-2"></div>
+
+<div class="container mt-4">
+    <h2>📌 หมวดหมู่ Forum</h2>
+    <ul class="list-group list-group-flush">
+        {% for service_id, service_name in service_centers.items() %}
+            <li class="list-group-item">
+                <a href="{{ url_for('service_center', service_id=service_id) }}">
+                    🗂️ {{ service_name }}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<div class="container mt-5">
+    <h2>⭐ โพสต์แนะนำประจำสัปดาห์</h2>
+    <ul class="list-group">
+        {% for post in latest_posts %}
+            <li class="list-group-item">
+                <h5>{{ post.title }}</h5>
+                <div style="white-space: pre-line;">{{ post.content|safe }}</div>
+
+                {% if post_images[post.title] %}
+                    <div class="post-images mt-2 mb-2">
+                        {% for image in post_images[post.title] %}
+                            <img src="{{ url_for('static', filename='uploads/' + post.title + '/' + image) }}" alt="Post Image" width="150px" class="me-2 mb-2 rounded">
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">ไม่มีรูปภาพแนบ</p>
+                {% endif %}
+
+                <a href="{{ url_for('post_actions', service_id=post.service_id, post_title=post.title) }}" class="btn btn-sm btn-outline-primary">อ่านต่อ</a>
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    function GetClock() {
+        const d = new Date();
+        let nhour = d.getHours();
+        const nmin = d.getMinutes().toString().padStart(2, '0');
+        const nsec = d.getSeconds().toString().padStart(2, '0');
+        const ap = nhour < 12 ? " AM" : " PM";
+
+        if (nhour === 0) nhour = 12;
+        else if (nhour > 12) nhour -= 12;
+
+        const timeString = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+        document.getElementById('clockbox').innerHTML = timeString;
+
+        let greeting;
+        if (d.getHours() < 12) greeting = "สวัสดีตอนเช้าครับ🙏";
+        else if (d.getHours() === 12) greeting = "สวัสดีตอนเที่ยงครับ🙏";
+        else if (d.getHours() >= 13 && d.getHours() <= 17) greeting = "สวัสดีตอนบ่าย🙏";
+        else greeting = "สวัสดีตอนเย็น🙏";
+        document.getElementById('greetingbox').innerHTML = greeting;
+
+        setTimeout(GetClock, 1000);
+    }
+    window.onload = GetClock;
+</script>
+{% endblock %}
+
+#login.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>เข้าสู่ระบบ</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+  <div class="container">
+    <a href="/" accesskey="h"title="Clear [Alt+H]">หน้าแรก (Home)</a>
+    <h1>เข้าสู่ระบบ</h1>
+    <form method="POST" action="{{ url_for('login') }}">
+        <label for="email">อีเมล:</label><br>
+        <input type="email" id="email" name="email" required><br><br>
+        <label for="password">รหัสผ่าน:</label><br>
+        <input type="password" id="password" name="password" required><br><br>
+        <button type="submit">เข้าสู่ระบบ</button>
+        <p>หรือ</>
+        <a href="{{ url_for('register') }}"><button>สมัครสมาชิก</button></a>
+    </form>
+  </div>
+</body>
+</html>
+
+#manage_users.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>จัดการผู้ใช้</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+  <div class="container">
+    <h1>จัดการผู้ใช้</h1>
+    <p><a href="{{ url_for('home.home') }}">กลับไปยังหน้าแรก</a></p>
+
+    <h2>รายชื่อผู้ใช้ทั้งหมด</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ชื่อเต็ม</th>
+                <th>จัดการ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+                <tr>
+                    <td>{{ user.firstname }} {{ user.lastname }}</td>
+                    <td>
+                        <a href="{{ url_for('user_details', id=user.id) }}">ดูรายละเอียด</a>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+  </div>
+</body>
+</html>
+
+#post_actions.html
+{% extends "base.html" %}
+
+{% block title %}รายละเอียดโพสต์ - {{ post_title }}{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('home.home') }}" class="btn btn-outline-secondary mb-3">← กลับหน้าแรก</a>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h3 class="card-title">
+            <img src="{{ url_for('static', filename='uploads/' + post_owner_profile_picture) }}"
+                 class="rounded-circle me-2" width="50" height="50" alt="Profile Picture">
+            {{ post_title }}
+        </h3>
+        <div id="post-content" class="card-text mt-3"></div>
+    </div>
+</div>
+
+<script>
+    const rawContent = `{{ post_content | e }}`;
+    document.getElementById('post-content').innerHTML = rawContent.replace(/\n/g, '<br>');
+</script>
+
+{% if post_images %}
+<div class="image-grid mb-4">
+    {% for image_file in post_images %}
+        <img src="{{ url_for('static', filename='uploads/' + post_title + '/' + image_file) }}"
+             alt="Attached Image" class="img-thumbnail">
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="like-buttons mt-2" data-post-title="{{ post_title }}" data-service-id="{{ service_id }}">
+    <button class="btn btn-outline-success btn-sm like-btn">👍 ถูกใจ</button>
+    <span class="like-count">0</span>
+    <button class="btn btn-outline-danger btn-sm dislike-btn ms-2">👎 ไม่ถูกใจ</button>
+    <span class="dislike-count">0</span>
+</div>
+
+<!-- แชร์ลิงก์ -->
+<div class="mt-3">
+  <button class="btn btn-info" onclick="sharePost()">🔗 แชร์โพสต์</button>
+</div>
+
+<script>
+  function sharePost() {
+    const link = window.location.href;
+    navigator.clipboard.writeText(link).then(() => {
+      alert("📎 ลิงก์โพสต์ถูกคัดลอกเรียบร้อยแล้ว!");
+    });
+  }
+</script>
+
+
+<!-- 🔽 แสดงคอมเมนต์ -->
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        💬 ความคิดเห็นทั้งหมด
+    </div>
+    <div class="card-body">
+        {% if comments %}
+            {% for comment in comments %}
+                <div class="border-bottom pb-3 mb-3">
+                    <img src="{{ url_for('static', filename='uploads/' + comment.profile_picture) }}"
+                         alt="Profile Picture" class="rounded-circle me-2" width="40" height="40">
+                    <strong>{{ comment.author }}</strong> <br>
+                    <small class="text-muted">🕒 {{ comment.time }}</small>
+                    <p class="mt-2">{{ comment.content }}</p>
+
+                    {% if 'user_id' in session and user.rank != 'user_default' %}
+                        <a href="{{ url_for('user_details', id=comment.user_id) }}" class="btn btn-link btn-sm">ดูโปรไฟล์</a>
+                    {% endif %}
+
+                    {% if user and comment.author == user.firstname + ' ' + user.lastname %}
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-primary me-1"
+                                    onclick="toggleEditForm('edit-form-{{ loop.index }}')">แก้ไข</button>
+                            <form action="{{ url_for('delete_comment', service_id=service_id, post_title=post_title, comment_time=comment.time) }}"
+                                  method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">ลบ</button>
+                            </form>
+
+                            <form id="edit-form-{{ loop.index }}"
+                                  action="{{ url_for('edit_comment', service_id=service_id, post_title=post_title, comment_time=comment.time) }}"
+                                  method="POST" class="mt-2" style="display: none;">
+                                <textarea name="new_content" class="form-control mb-2">{{ comment.content }}</textarea>
+                                <button type="submit" class="btn btn-sm btn-success">💾 บันทึกการแก้ไข</button>
+                            </form>
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">ยังไม่มีคอมเมนต์</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 🔽 ฟอร์มคอมเมนต์ใหม่ -->
+<div class="card mb-5">
+    <div class="card-header bg-light">✍️ แสดงความคิดเห็น</div>
+    <div class="card-body">
+        <form action="{{ url_for('post_actions', service_id=service_id, post_title=post_title) }}" method="POST">
+            <textarea name="comment" class="form-control mb-2" rows="4" placeholder="เขียนคอมเมนต์ที่นี่..." required></textarea>
+            <button type="submit" class="btn btn-primary">โพสต์คอมเมนต์</button>
+        </form>
+    </div>
+</div>
+
+<!-- 🔽 การจัดการโพสต์ -->
+{% if is_owner %}
+    <div class="d-flex justify-content-between align-items-center mb-5">
+        <a href="{{ url_for('edit_post', service_id=service_id, post_title=post_title) }}"
+           class="btn btn-warning">✏️ แก้ไขโพสต์</a>
+
+        <form action="{{ url_for('delete_post', service_id=service_id, post_title=post_title) }}" method="POST">
+            <button type="submit" class="btn btn-danger">🗑️ ลบโพสต์</button>
+        </form>
+    </div>
+{% endif %}
+
+<style>
+.image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+.image-grid img {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+    border-radius: 8px;
+}
+</style>
+
+<script>
+function toggleEditForm(formId) {
+    const form = document.getElementById(formId);
+    form.style.display = (form.style.display === "none" || !form.style.display) ? "block" : "none";
+}
+</script>
+
+<script>
+document.querySelectorAll('.like-buttons').forEach(group => {
+    const post_title = group.dataset.postTitle;
+    const service_id = group.dataset.serviceId;
+    const likeBtn = group.querySelector('.like-btn');
+    const dislikeBtn = group.querySelector('.dislike-btn');
+    const likeCount = group.querySelector('.like-count');
+    const dislikeCount = group.querySelector('.dislike-count');
+
+    function sendLike(is_like) {
+        fetch('/like_post', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ post_title, service_id, is_like })
+        })
+        .then(res => res.json())
+        .then(data => {
+            likeCount.textContent = data.likes;
+            dislikeCount.textContent = data.dislikes;
+        });
+    }
+
+    likeBtn.addEventListener('click', () => sendLike(true));
+    dislikeBtn.addEventListener('click', () => sendLike(false));
+});
+</script>
+
+{% endblock %}
+
+#register.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>สมัครสมาชิก</title>
+</head>
+<body>
+    <a href="/" accesskey="h"title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>สมัครสมาชิก</h1>
+<form action="{{ url_for('register') }}" method="POST" enctype="multipart/form-data">
+    <!-- ชื่อจริง -->
+    <label for="firstname">ชื่อจริง:</label>
+    <input type="text" name="firstname" id="firstname" required>
+
+    <!-- นามสกุล -->
+    <label for="lastname">นามสกุล:</label>
+    <input type="text" name="lastname" id="lastname" required>
+
+    <!-- อีเมล -->
+    <label for="email">อีเมล:</label>
+    <input type="email" name="email" id="email" required>
+
+    <!-- รหัสผ่าน -->
+    <label for="password">รหัสผ่าน:</label>
+    <input type="password" name="password" id="password" required>
+
+    <!-- เบอร์โทรศัพท์ -->
+    <label for="phone">เบอร์โทรศัพท์:</label>
+    <input type="text" name="phone" id="phone" required>
+
+    <!-- ที่อยู่ถาวร -->
+    <label for="address_permanent">ที่อยู่ถาวร:</label>
+    <input type="text" name="address_permanent" id="address_permanent" required>
+
+    <!-- ที่อยู่ปัจจุบัน -->
+    <label for="address_current">ที่อยู่ปัจจุบัน:</label>
+    <input type="text" name="address_current" id="address_current" required>
+
+    <!-- วันเดือนปีเกิด -->
+    <label for="dob">วันเดือนปีเกิด:</label>
+    <input type="date" name="dob" id="dob" required>
+
+    <!-- แนบรูปภาพ -->
+    <label for="profile_picture">รูปโปรไฟล์:</label>
+    <input type="file" name="profile_picture" accept="image/*" required>
+
+    <!-- ปุ่มส่งฟอร์ม -->
+    <input type="submit" value="สมัครสมาชิก">
+</form>
+
+    </div>
+</body>
+</html>
+
+#search.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ผลการค้นหา - {{ query }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+
+<div class="container mt-4">
+    <h2 class="text-primary">ผลการค้นหา: "{{ query }}"</h2>
+    <hr>
+
+    {% if results %}
+        <ul class="list-group">
+            {% for article in results %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('content.content', article_id=article['id']) }}">
+                        <h5 class="mb-1">{{ article['title'] }}</h5>
+                    </a>
+                    <p class="mb-0">{{ article['content'][:100] }}...</p>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-muted">ไม่พบผลลัพธ์</p>
+    {% endif %}
+</div>
+
+</body>
+</html>
+
+#service.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ category_name }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+    <div class="container mt-4">
+        <h1 class="text-primary">{{ category_name }}</h1>
+
+        <h2>หมวดหมู่ย่อย</h2>
+        <ul class="list-group">
+            {% for id, name in subcategories %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('service', category_id=id) }}" class="text-decoration-none">
+                        <i class="fas fa-folder"></i> {{ name }}
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+
+        <h2 class="mt-4">บทความ</h2>
+        <ul class="list-group">
+            {% for id, title, updated_at in articles %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('content.content', article_id=id) }}" class="text-decoration-none">
+                        <i class="fas fa-file-alt"></i> {{ title }}
+                    </a>
+                    <br>
+                    <small class="text-muted updated-time" data-time="{{ updated_at }}">📅 อัปเดตล่าสุด: กำลังโหลด...</small>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        document.querySelectorAll(".updated-time").forEach(function(el) {
+            let rawTime = el.getAttribute("data-time");
+
+            // ตรวจสอบว่าเป็น Timestamp (Unix Time) หรือเป็น String (YYYY-MM-DD HH:MM:SS)
+            let timestamp;
+            if (!isNaN(rawTime) && rawTime.length >= 10) {
+                timestamp = parseInt(rawTime) * 1000; // ถ้าเป็น Unix Time → คูณ 1000 เพื่อแปลงเป็น milliseconds
+            } else {
+                timestamp = Date.parse(rawTime); // ถ้าเป็นรูปแบบ String → แปลงเป็น Timestamp
+            }
+
+            if (!isNaN(timestamp)) {
+                let dateObj = new Date(timestamp);
+
+                let options = { 
+                    year: "numeric", 
+                    month: "long", 
+                    day: "numeric",
+                    hour: "2-digit", 
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: false
+                };
+
+                let formattedDate = new Intl.DateTimeFormat("th-TH", options).format(dateObj);
+                el.innerText = `📅 อัปเดตล่าสุด: ${formattedDate}`;
+            } else {
+                el.innerText = "📅 อัปเดตล่าสุด: ไม่สามารถแปลงวันที่ได้";
+            }
+        });
+    });
+    </script>
+
+</body>
+</html>
+
+#service_center.html
+{% extends "base.html" %}
+
+{% block title %}{{ service_name }} - ศูนย์บริการ{% endblock %}
+
+{% block content %}
+<h1 class="mb-3 text-primary">📍 คุณกำลังรับชมอยู่หน้า: {{ service_name }}</h1>
+<div id="clockbox" class="mb-3 fw-bold"></div>
+
+<script>
+    const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    function GetClock() {
+        const d = new Date();
+        let nhour = d.getHours();
+        const nmin = d.getMinutes().toString().padStart(2, '0');
+        const nsec = d.getSeconds().toString().padStart(2, '0');
+        const ap = nhour < 12 ? " AM" : " PM";
+        if (nhour === 0) nhour = 12;
+        else if (nhour > 12) nhour -= 12;
+        document.getElementById('clockbox').innerHTML = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+        setTimeout(GetClock, 1000);
+    }
+    window.onload = GetClock;
+</script>
+
+{% if greeting %}
+    <div class="alert alert-info">
+        {{ greeting }}
+        {% if greeting == "คุณยังไม่ได้เป็นสมาชิก" %}
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm ms-2">เข้าสู่ระบบ</a>
+            <a href="{{ url_for('register') }}" class="btn btn-outline-secondary btn-sm ms-1">สมัครสมาชิก</a>
+        {% else %}
+            <a href="{{ url_for('account') }}" class="btn btn-success btn-sm ms-2">บัญชีของฉัน</a>
+            {% if 'user_id' in session and user.rank == 'user_administrator_and_manage_systems' %}
+                <a href="{{ url_for('manage_users') }}" class="btn btn-warning btn-sm ms-1">จัดการบัญชี</a>
+            {% endif %}
+        {% endif %}
+    </div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        📝 โพสต์คำถามหรือพูดคุย
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('post_service_center', service_id=service_id) }}" method="POST" enctype="multipart/form-data">
+            <label for="title" class="form-label">หัวเรื่อง:</label>
+            <input type="text" id="title" name="title" class="form-control" required>
+
+            <label for="content" class="form-label mt-3">เนื้อหา:</label>
+            <textarea id="content" name="content" rows="4" class="form-control" required></textarea>
+
+            <label for="image" class="form-label mt-3">แนบรูปภาพ (ถ้ามี):</label>
+            <input type="file" id="image" name="image" class="form-control" multiple>
+
+            <button type="submit" class="btn btn-primary mt-3">📨 โพสต์</button>
+        </form>
+    </div>
+</div>
+
+<div class="mb-4">
+    <h2 class="text-success">📘 ข้อมูลแนะนำจากศูนย์บริการ</h2>
+    <p>{{ service_intro }}</p>
+</div>
+
+<h2 class="text-secondary mb-3">📂 กระทู้ในศูนย์บริการ</h2>
+{% for post in posts %}
+    <div class="post-container">
+        <h4>
+            <img src="{{ url_for('static', filename='uploads/' + post.profile_picture) }}"
+                 alt="Profile" style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%;">
+            {{ post.title }}
+        </h4>
+        <p class="text-muted">🧑 โพสต์โดย: {{ post.author }} (ระดับ: {{ post.rank }})</p>
+        <div class="mb-2" style="white-space: pre-line;">{{ post.content|safe }}</div>
+
+        {% if post_images[post.title] %}
+            <div class="mb-2">
+                <p class="mb-1">🖼️ รูปภาพที่แนบ:</p>
+                {% for image_file in post_images[post.title] %}
+                    <img src="{{ url_for('static', filename='uploads/' + post.title + '/' + image_file) }}"
+                         alt="Attached Image" class="img-thumbnail me-2" style="max-width: 300px;">
+                {% endfor %}
+            </div>
+        {% endif %}
+        <a href="{{ url_for('post_actions', service_id=service_id, post_title=post.title) }}" class="btn btn-outline-primary btn-sm">📖 อ่านต่อ</a>
+    </div>
+{% endfor %}
+{% endblock %}
+
+#signup.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>สมัครสมาชิก</title>
+</head>
+<body>
+    <h1>สมัครสมาชิก</h1>
+    <form action="/submit_signup" method="POST">
+        <label for="firstname">ชื่อจริง:</label>
+        <input type="text" id="firstname" name="firstname" required><br>
+
+        <label for="lastname">นามสกุล:</label>
+        <input type="text" id="lastname" name="lastname" required><br>
+
+        <label for="email">อีเมล:</label>
+        <input type="email" id="email" name="email" required><br>
+
+        <label for="password">รหัสผ่าน:</label>
+        <input type="password" id="password" name="password" required><br>
+
+        <label for="phone">เบอร์โทรศัพท์:</label>
+        <input type="tel" id="phone" name="phone" required><br>
+
+        <label for="home_address">ที่อยู่ตามทะเบียนบ้าน:</label><br>
+        <textarea id="home_address" name="home_address" rows="3" required></textarea><br>
+
+        <label for="current_address">ที่อยู่ปัจจุบัน:</label><br>
+        <textarea id="current_address" name="current_address" rows="3" required></textarea><br>
+
+        <button type="submit">สมัครสมาชิก</button>
+    </form>
+</body>
+</html>
+
+#user_details.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>รายละเอียดผู้ใช้</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+  <div class="container">
+    <h1>รายละเอียดผู้ใช้</h1>
+    <p><a href="{{ url_for('manage_users') }}">กลับไปยังจัดการผู้ใช้</a></p>
+
+    <h2>ข้อมูลของ {{ user.firstname }} {{ user.lastname }}</h2>
+    <p>อีเมล: {{ user.email }}</p>
+    <p>โทรศัพท์: {{ user.phone }}</p>
+    <p>ที่อยู่ตามทะเบียนบ้าน: {{ user.address_permanent }}</p>
+    <p>ที่อยู่ปัจจุบัน: {{ user.address_current }}</p>
+    <p>วันเดือนปีเกิด: {{ user.dob }}</p>
+    <p>ระดับ: {{ user.rank }}</p>
+    <p>วันลงทะเบียน: {{ user.registered_date }}</p>
+
+    <h3>เปลี่ยนระดับผู้ใช้</h3>
+    <form method="POST">
+        <select name="rank">
+            <option value="user_default" {% if user.rank == 'user_default' %}selected{% endif %}>User Default</option>
+            <option value="user_admin" {% if user.rank == 'user_admin' %}selected{% endif %}>User Admin</option>
+        </select>
+        <button type="submit">เปลี่ยนระดับ</button>
+    </form>
+  </div>
+</body>
+</html>
+

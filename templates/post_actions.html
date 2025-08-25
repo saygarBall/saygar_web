@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}รายละเอียดโพสต์ - {{ post_title }}{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('home.home') }}" class="btn btn-outline-secondary mb-3">← กลับหน้าแรก</a>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h3 class="card-title">
+            <img src="{{ url_for('static', filename='uploads/' + post_owner_profile_picture) }}"
+                 class="rounded-circle me-2" width="50" height="50" alt="Profile Picture">
+            {{ post_title }}
+        </h3>
+        <div id="post-content" class="card-text mt-3"></div>
+    </div>
+</div>
+
+<script>
+    const rawContent = `{{ post_content | e }}`;
+    document.getElementById('post-content').innerHTML = rawContent.replace(/\n/g, '<br>');
+</script>
+
+{% if post_images %}
+<div class="image-grid mb-4">
+    {% for image_file in post_images %}
+        <img src="{{ url_for('static', filename='uploads/' + post_title + '/' + image_file) }}"
+             alt="Attached Image" class="img-thumbnail">
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="like-buttons mt-2" data-post-title="{{ post_title }}" data-service-id="{{ service_id }}">
+    <button class="btn btn-outline-success btn-sm like-btn">👍 ถูกใจ</button>
+    <span class="like-count">{{ like_count }}</span>  <!-- 🆕 แก้เป็นตัวแปร -->
+    <button class="btn btn-outline-danger btn-sm dislike-btn ms-2">👎 ไม่ถูกใจ</button>
+    <span class="dislike-count">{{ dislike_count }}</span> <!-- 🆕 แก้เป็นตัวแปร -->
+</div>
+
+<!-- แชร์ลิงก์ -->
+<div class="mt-3">
+  <button class="btn btn-info" onclick="sharePost()">🔗 แชร์โพสต์</button>
+</div>
+
+<script>
+  function sharePost() {
+    const link = window.location.href;
+    navigator.clipboard.writeText(link).then(() => {
+      alert("📎 ลิงก์โพสต์ถูกคัดลอกเรียบร้อยแล้ว!");
+    });
+  }
+</script>
+
+
+<!-- 🔽 แสดงคอมเมนต์ -->
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        💬 ความคิดเห็นทั้งหมด
+    </div>
+    <div class="card-body">
+        {% if comments %}
+            {% for comment in comments %}
+                <div class="border-bottom pb-3 mb-3">
+                    <img src="{{ url_for('static', filename='uploads/' + comment.profile_picture) }}"
+                         alt="Profile Picture" class="rounded-circle me-2" width="40" height="40">
+                    <strong>{{ comment.author }}</strong> <br>
+                    <small class="text-muted">🕒 {{ comment.time }}</small>
+                    <p class="mt-2">{{ comment.content }}</p>
+
+                    {% if 'user_id' in session and user.rank != 'user_default' %}
+                        <a href="{{ url_for('user_details', id=comment.user_id) }}" class="btn btn-link btn-sm">ดูโปรไฟล์</a>
+                    {% endif %}
+
+                    {% if user and comment.author == user.firstname + ' ' + user.lastname %}
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-primary me-1"
+                                    onclick="toggleEditForm('edit-form-{{ loop.index }}')">แก้ไข</button>
+                            <form action="{{ url_for('delete_comment', service_id=service_id, post_title=post_title, comment_time=comment.time) }}"
+                                  method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">ลบ</button>
+                            </form>
+
+                            <form id="edit-form-{{ loop.index }}"
+                                  action="{{ url_for('edit_comment', service_id=service_id, post_title=post_title, comment_time=comment.time) }}"
+                                  method="POST" class="mt-2" style="display: none;">
+                                <textarea name="new_content" class="form-control mb-2">{{ comment.content }}</textarea>
+                                <button type="submit" class="btn btn-sm btn-success">💾 บันทึกการแก้ไข</button>
+                            </form>
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">ยังไม่มีคอมเมนต์</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 🔽 ฟอร์มคอมเมนต์ใหม่ -->
+<div class="card mb-5">
+    <div class="card-header bg-light">✍️ แสดงความคิดเห็น</div>
+    <div class="card-body">
+        <form action="{{ url_for('post_actions', service_id=service_id, post_title=post_title) }}" method="POST">
+            <textarea name="comment" class="form-control mb-2" rows="4" placeholder="เขียนคอมเมนต์ที่นี่..." required></textarea>
+            <button type="submit" class="btn btn-primary">โพสต์คอมเมนต์</button>
+        </form>
+    </div>
+</div>
+
+<!-- 🔽 การจัดการโพสต์ -->
+{% if is_owner %}
+    <div class="d-flex justify-content-between align-items-center mb-5">
+        <a href="{{ url_for('edit_post', service_id=service_id, post_title=post_title) }}"
+           class="btn btn-warning">✏️ แก้ไขโพสต์</a>
+
+        <form action="{{ url_for('delete_post', service_id=service_id, post_title=post_title) }}" method="POST">
+            <button type="submit" class="btn btn-danger">🗑️ ลบโพสต์</button>
+        </form>
+    </div>
+{% endif %}
+
+<style>
+.image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+.image-grid img {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+    border-radius: 8px;
+}
+</style>
+
+<script>
+function toggleEditForm(formId) {
+    const form = document.getElementById(formId);
+    form.style.display = (form.style.display === "none" || !form.style.display) ? "block" : "none";
+}
+</script>
+
+<script>
+document.querySelectorAll('.like-buttons').forEach(group => {
+    const post_title = group.dataset.postTitle;
+    const service_id = group.dataset.serviceId;
+    const likeBtn = group.querySelector('.like-btn');
+    const dislikeBtn = group.querySelector('.dislike-btn');
+    const likeCount = group.querySelector('.like-count');
+    const dislikeCount = group.querySelector('.dislike-count');
+
+    function sendLike(is_like) {
+        fetch('/like_post', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ post_title, service_id, is_like })
+        })
+        .then(res => res.json())
+        .then(data => {
+            likeCount.textContent = data.likes;
+            dislikeCount.textContent = data.dislikes;
+        });
+    }
+
+    likeBtn.addEventListener('click', () => sendLike(true));
+    dislikeBtn.addEventListener('click', () => sendLike(false));
+});
+</script>
+
+{% endblock %}

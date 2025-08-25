@@ -1,0 +1,70 @@
+/* ตั้งค่าทั่วไป */
+body {
+    font-family: 'Poppins', sans-serif; /* ฟอนต์ที่ดูทันสมัย */
+    background-color: #2C2C2C; /* พื้นหลังสีเทาเข้ม */
+    color: #F5F5F5; /* สีข้อความหลักเป็นสีขาว */
+    margin: 0;
+    padding: 20px;
+}
+
+/* กำหนดโครงร่างทั่วไปของเว็บ */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #333; /* กล่องเนื้อหาหลักเป็นสีเทาเข้ม */
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* เงาเล็กน้อย */
+}
+
+/* การจัดการกับหัวข้อ */
+h1, h2 {
+    color: #FFD700; /* สีเหลืองทองสำหรับหัวข้อ */
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+/* การจัดการกับลิสต์ */
+ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+ul li {
+    background-color: #444; /* สีพื้นหลังรายการ */
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+}
+
+ul li:hover {
+    background-color: #555; /* เปลี่ยนสีเมื่อ hover */
+}
+
+/* การจัดการโพสต์ */
+.post {
+    background-color: #3C3C3C;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.post h3 {
+    color: #FFA500; /* สีหัวข้อโพสต์เป็นสีส้ม */
+    margin-bottom: 10px;
+}
+
+.post p {
+    margin: 0;
+    color: #E0E0E0;
+}
+
+/* Footer */
+footer {
+    text-align: center;
+    margin-top: 40px;
+    color: #AAA;
+}
+

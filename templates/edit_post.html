@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>edit post</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+  <h1>แก้ไขโพสต์: {{ post_title }}</h1>
+  <form method="POST">
+      <textarea name="new_content" required>{{ post_content }}</textarea>
+      <button type="submit">บันทึกการแก้ไข</button>
+  </form>
+    </div>
+</body>
+</html>

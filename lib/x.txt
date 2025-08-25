@@ -1,0 +1,2776 @@
+#app.py
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from lib.database import load_data, get_db_connection
+from lib.home import home_bp
+from lib.service import service_bp
+from lib.content import content_bp
+from lib.search import search_bp
+import sqlite3
+from werkzeug.security import check_password_hash
+from werkzeug.utils import secure_filename
+from lib.posts import handle_post, get_posts, get_latest_posts, create_service_folder, get_post_images
+from lib.database2 import get_db, init_db, setup_app, get_user, update_user_rank, update_user_rank_by_email
+from lib.auth import register_user, authenticate_user
+from lib.user_management import promote_user_to_admin, demote_user_to_default, get_all_users
+from lib.post_actions import *
+from lib.service_centers import get_service_name, get_all_service_centers, get_service_intro
+from lib.accounts import account_blueprint
+from lib.utils import allowed_file, check_user_rank, create_folder_if_not_exists, save_image, get_greeting, sanitize_filename
+import os
+from lib.auth import check_user_permission
+
+
+
+app = Flask(__name__)
+app.secret_key = 'arkarachaicojwlkasdic84ljJIJOfjwkja9c5553'
+app.register_blueprint(account_blueprint)
+
+
+
+app.register_blueprint(home_bp)
+app.register_blueprint(service_bp)
+app.register_blueprint(content_bp)
+app.register_blueprint(search_bp)
+
+@app.route('/index2')
+def index2():
+    greeting = get_greeting()
+    user = get_user(session['user_id']) if 'user_id' in session else None
+    
+    service_centers = get_all_service_centers()
+    latest_posts = get_latest_posts()
+
+    # ใช้ get_post_images เพื่อดึงข้อมูลรูปภาพ
+    post_images = {post['title']: get_post_images(post['title']) for post in latest_posts}
+
+    return render_template('index2.html', greeting=greeting, user=user, service_centers=service_centers, latest_posts=latest_posts, post_images=post_images)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        form_data = request.form
+        profile_picture = request.files['profile_picture']
+        register_user(form_data, profile_picture)
+        return redirect(url_for('login'))
+    
+    return render_template('register.html')
+
+@app.route('/manage_users')
+@check_user_permission('user_administrator_and_manage_systems')
+def manage_users():
+    users = get_all_users()
+    return render_template('manage_users.html', users=users)
+
+@app.route('/user_details/<int:id>', methods=['GET', 'POST'])
+@check_user_permission('user_administrator_and_manage_systems')
+def user_details(id):
+    user = get_user(id)
+    if request.method == 'POST':
+        new_rank = request.form.get('rank')
+        if new_rank in ['user_default', 'user_admin']:
+            update_user_rank(id, new_rank)
+            flash('การเปลี่ยนแปลงระดับผู้ใช้สำเร็จ')
+            return redirect(url_for('manage_users'))
+    return render_template('user_details.html', user=user)
+
+@app.route('/change_user_rank/<int:id>', methods=['POST'])
+def change_user_rank(id):
+    if 'user_id' in session and session.get('user_id'):
+        user_id = session['user_id']
+        user = get_user(user_id)
+        if user['rank'] == 'user_administrator_and_manage_systems':
+            new_rank = request.form['rank']
+            update_user_rank(id, new_rank)
+            flash('บทบาทของผู้ใช้ได้ถูกเปลี่ยนแล้ว')
+        else:
+            flash('คุณไม่มีสิทธิเข้าถึงหน้านี้')
+    else:
+        flash('กรุณาเข้าสู่ระบบก่อน')
+    return redirect(url_for('manage_users'))
+
+@app.route('/account')
+def account():
+    user = get_user(session['user_id']) if 'user_id' in session else None
+    return render_template('account.html', user=user)
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+
+        db = get_db()
+        user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+
+        if user and check_password_hash(user['password'], password):
+            session['user_id'] = user['id']
+            session['email'] = user['email']
+            session.permanent = True
+            return redirect(url_for('home.home'))
+        else:
+            flash('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+            return redirect(url_for('login'))
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()  # ลบข้อมูล session ทั้งหมด
+    flash('คุณได้ออกจากระบบเรียบร้อยแล้ว')
+    return redirect(url_for('home.home'))
+
+@app.route('/promote_user/<int:id>')
+def promote_user(id):
+    if 'user_id' in session and session.get('user_id'):
+        user_id = session['user_id']
+        db = get_db()
+        current_user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if current_user['rank'] == 'user_administrator_and_manage_systems':
+            db.execute("UPDATE users SET rank = 'user_admin' WHERE id = ?", (id,))
+            db.commit()
+            flash('โปรโมตผู้ใช้เป็นผู้ดูแลระบบเรียบร้อยแล้ว')
+            return redirect(url_for('manage_users'))
+        else:
+            flash('คุณไม่มีสิทธิเข้าถึงหน้านี้')
+            return redirect(url_for('index2'))
+    return redirect(url_for('login'))
+
+@app.route('/demote_user/<int:id>')
+@check_user_permission('user_administrator_and_manage_systems')
+def demote_user(id):
+    update_user_rank(id, 'user_default')
+    flash('ลดระดับผู้ใช้เป็นผู้ใช้ทั่วไปเรียบร้อยแล้ว')
+    return redirect(url_for('manage_users'))
+
+@app.route('/post_service_center/<int:service_id>', methods=['GET', 'POST'])
+def post_service_center(service_id):
+    if request.method == 'POST':
+        title = request.form.get('title')
+        content = request.form.get('content')
+        images = request.files.getlist('image')
+
+        post_folder = os.path.join(app.root_path, 'static', 'uploads', secure_filename(title))
+        create_folder_if_not_exists(post_folder)
+
+        saved_image_names = [save_image(image, post_folder) for image in images if image and allowed_file(image.filename)]
+
+        # Check if user is logged in
+        if 'user_id' in session and session.get('user_id'):
+            user = get_user(session['user_id'])
+            firstname, lastname, user_rank, email = user['firstname'], user['lastname'], user['rank'], user['email']
+        else:
+            flash("คุณต้องเข้าสู่ระบบก่อนถึงจะโพสต์ได้")
+            return redirect(url_for('login'))
+
+        handle_post(service_id, title, content, saved_image_names, firstname, lastname, user_rank, email)
+        flash('โพสต์ถูกบันทึกเรียบร้อยแล้ว!')
+        return redirect(url_for('service_center', service_id=service_id))
+
+    flash('Method ไม่ถูกต้อง')
+    return redirect(url_for('index2'))
+
+
+@app.route('/post_actions/<int:service_id>/<post_title>', methods=['GET', 'POST'])
+def post_actions(service_id, post_title):
+    post_owner_email = get_post_owner_email(service_id, post_title)
+    post_content, comments = get_post_and_comments(service_id, post_title, post_owner_email)
+    like_count, dislike_count = get_post_like_counts(service_id, post_title)
+
+
+    # Fetch images attached to the post
+    post_images = get_post_images(post_title)
+
+    user = get_user(session['user_id']) if 'user_id' in session else None
+    is_owner = user and user['email'] == post_owner_email
+
+    post_owner = get_user(post_owner_email, by_email=True)
+    post_owner_profile_picture = post_owner['profile_picture'] if post_owner else 'default_profile.png'
+
+    if request.method == 'POST' and 'comment' in request.form:
+        if user:
+            comment_content = request.form['comment']
+            save_comment(service_id, post_title, comment_content, user['firstname'], user['lastname'], user['email'], post_owner_email)
+            flash('คอมเมนต์ถูกบันทึกแล้ว!')
+        else:
+            flash("คุณต้องเข้าสู่ระบบก่อนถึงจะแสดงความคิดเห็นได้")
+        return redirect(request.url)
+
+    return render_template(
+        'post_actions.html', 
+        post_title=post_title, 
+        post_content=post_content, 
+        comments=comments, 
+        is_owner=is_owner,
+        service_id=service_id, 
+        user=user,
+        post_owner_profile_picture=post_owner_profile_picture,
+        post_images=post_images,
+        like_count=like_count,
+        dislike_count=dislike_count
+    )
+
+@app.route('/delete_post/<int:service_id>/<post_title>', methods=['POST'])
+def delete_post(service_id, post_title):
+    if 'user_id' in session and session.get('user_id'):
+        user_id = session['user_id']
+        user = get_user(user_id)
+        if check_post_owner(service_id, post_title, user['email']):
+            post_folder = create_service_folder(service_id, user['email'])
+            post_filepath = os.path.join(post_folder, f"{post_title}.txt")
+
+            if os.path.exists(post_filepath):
+                os.remove(post_filepath)
+                flash("โพสต์ถูกลบเรียบร้อยแล้ว")
+            else:
+                flash("ไม่พบไฟล์โพสต์ที่ต้องการลบ")
+
+            return redirect(url_for('service_center', service_id=service_id))
+        else:
+            flash("คุณไม่มีสิทธิ์ในการลบโพสต์นี้")
+    return redirect(url_for('service_center', service_id=service_id))
+
+@app.route('/edit_post/<int:service_id>/<post_title>', methods=['GET', 'POST'])
+def edit_post(service_id, post_title):
+    if 'user_id' in session and session.get('user_id'):
+        user_id = session['user_id']
+        user = get_user(user_id)
+
+        if check_post_owner(service_id, post_title, user['email']):
+            post_folder = create_service_folder(service_id, user['email'])
+            post_filepath = os.path.join(post_folder, f"{post_title}.txt")
+
+            # อ่านเนื้อหาจากไฟล์ โดยไม่เพิ่ม newline เพิ่มเติม
+            post_content = read_post_content(post_filepath).strip()
+
+            if request.method == 'POST':
+                new_content = request.form['new_content'].strip().replace("\r\n", "\n")  # จัดการ newline ในเนื้อหาใหม่
+                
+                # บันทึกเนื้อหาใหม่ลงไฟล์
+                with open(post_filepath, 'w', encoding='utf-8') as f:
+                    f.write(f"โพสต์โดย: {user['firstname']} {user['lastname']} ({user['rank']})\n")
+                    f.write(f"เวลา: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]}\n\n")
+                    f.write("รายละเอียด:\n")
+                    f.write(new_content)  # บันทึกเนื้อหาใหม่ที่จัดการ newline
+
+                flash("โพสต์ถูกแก้ไขเรียบร้อยแล้ว")
+                return redirect(url_for('post_actions', service_id=service_id, post_title=post_title))
+
+            return render_template('edit_post.html', post_title=post_title, post_content=post_content)
+        else:
+            flash("คุณไม่มีสิทธิ์ในการแก้ไขโพสต์นี้")
+    return redirect(url_for('service_center', service_id=service_id))
+
+@app.route('/edit_comment/<int:service_id>/<post_title>/<comment_time>', methods=['POST'])
+def edit_comment(service_id, post_title, comment_time):
+    if 'user_id' in session and session.get('user_id'):
+        user_id = session['user_id']
+        user = get_user(user_id)
+
+        post_owner_email = get_post_owner_email(service_id, post_title)
+        post_content, comments = get_post_and_comments(service_id, post_title, post_owner_email)
+
+        new_content = request.form['new_content']
+
+        comment_filepath = os.path.join('txt', get_service_name(service_id), post_owner_email, f"{post_title}_comment.txt")
+        updated_comments = []
+        
+        with open(comment_filepath, 'r', encoding='utf-8') as f:
+            for line in f.readlines():
+                parsed = line.strip().split(':', 2)
+                if len(parsed) == 3 and parsed[2] == comment_time and parsed[0] == f"{user['firstname']} {user['lastname']}":
+                    updated_comments.append(f"{parsed[0]}:{new_content}:{parsed[2]}\n")
+                else:
+                    updated_comments.append(line)
+
+        with open(comment_filepath, 'w', encoding='utf-8') as f:
+            f.writelines(updated_comments)
+
+        flash('คอมเมนต์ถูกแก้ไขเรียบร้อยแล้ว')
+        return redirect(url_for('post_actions', service_id=service_id, post_title=post_title))
+
+    flash('คุณต้องเข้าสู่ระบบก่อนถึงจะแก้ไขคอมเมนต์ได้')
+    return redirect(url_for('login'))
+
+@app.route('/delete_comment/<int:service_id>/<post_title>/<comment_time>', methods=['POST'])
+def delete_comment(service_id, post_title, comment_time):
+    if 'user_id' in session and session.get('user_id'):
+        user_id = session['user_id']
+        user = get_user(user_id)
+
+        post_owner_email = get_post_owner_email(service_id, post_title)
+        comment_filepath = os.path.join('txt', get_service_name(service_id), post_owner_email, f"{post_title}_comment.txt")
+        updated_comments = []
+
+        with open(comment_filepath, 'r', encoding='utf-8') as f:
+            for line in f.readlines():
+                parsed = line.strip().split(':', 2)
+                if len(parsed) == 3 and parsed[2] == comment_time and parsed[0] == f"{user['firstname']} {user['lastname']}":
+                    continue
+                updated_comments.append(line)
+
+        with open(comment_filepath, 'w', encoding='utf-8') as f:
+            f.writelines(updated_comments)
+
+        flash('คอมเมนต์ถูกลบเรียบร้อยแล้ว')
+        return redirect(url_for('post_actions', service_id=service_id, post_title=post_title))
+
+    flash('คุณต้องเข้าสู่ระบบก่อนถึงจะลบคอมเมนต์ได้')
+    return redirect(url_for('login'))
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return render_template('500.html'), 500
+
+@app.route('/service_center/<int:service_id>')
+def service_center(service_id):
+    service_name = get_service_name(service_id)
+    posts = get_posts(service_id)
+    greeting = get_greeting()
+
+    # เรียกฟังก์ชันเพื่อดึงข้อมูลแนะนำของศูนย์บริการ
+    service_intro = get_service_intro(service_name)
+
+    # ดึงข้อมูลรูปภาพของโพสต์ทั้งหมด
+    post_images = {}
+    for post in posts:
+        post_folder = os.path.join('static', 'uploads', post['title'])
+        if os.path.exists(post_folder):
+            post_images[post['title']] = [
+                filename for filename in os.listdir(post_folder) if allowed_file(filename)
+            ]
+        else:
+            post_images[post['title']] = []
+
+    user = get_user(session['user_id']) if 'user_id' in session else None
+    return render_template(
+        'service_center.html', 
+        posts=posts, 
+        service_name=service_name, 
+        service_id=service_id, 
+        greeting=greeting, 
+        user=user,
+        post_images=post_images,  # ส่งข้อมูลรูปภาพไปยังเทมเพลต
+        service_intro=service_intro  # ส่งข้อมูลแนะนำไปยังเทมเพลต
+    )
+
+@app.route("/admin-dashboard")
+def admin_dashboard():
+    query = request.args.get("q", "").strip()
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+
+    if query:
+        rows = conn.execute("SELECT id, title FROM articles WHERE title LIKE ?", (f"%{query}%",)).fetchall()
+    else:
+        rows = conn.execute("SELECT id, title FROM articles").fetchall()
+    conn.close()
+
+    # ดึง user จาก session เพื่อใช้ใน base.html
+    user = get_user(session['user_id']) if 'user_id' in session else None
+
+    articles = []
+    for row in rows:
+        filename = f"{sanitize_filename(row['title'])}.mp3"
+        exists = os.path.exists(os.path.join("static", "audio", filename))
+        articles.append({
+            "id": row["id"],
+            "title": row["title"],
+            "tts_exists": exists
+        })
+
+    return render_template("admin_dashboard.html", articles=articles, user=user)
+
+@app.route("/delete-article/<int:article_id>", methods=["POST"])
+def delete_article(article_id):
+    conn = get_db_connection()
+    article = conn.execute("SELECT title FROM articles WHERE id=?", (article_id,)).fetchone()
+    if not article:
+        return "ไม่พบบทความ", 404
+
+    conn.execute("DELETE FROM articles WHERE id=?", (article_id,))
+    conn.commit()
+    conn.close()
+
+    # ลบไฟล์เสียงด้วย
+    from lib.utils import sanitize_filename
+    filename = f"{sanitize_filename(article['title'])}.mp3"
+    audio_path = os.path.join("static", "audio", filename)
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
+
+    return redirect(url_for("admin_dashboard"))
+
+from datetime import datetime
+
+@app.route("/admin/add-category", methods=["GET", "POST"])
+def add_article():
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    if request.method == "POST":
+        title = request.form["title"].strip()
+        content = request.form["content"].strip()
+        category_id = request.form["category_id"]
+        updated_at = datetime.now().isoformat()
+
+        # 👉 1. บันทึกบทความลงฐานข้อมูล
+        cursor.execute("""
+            INSERT INTO articles (title, content, category_id, updated_at)
+            VALUES (?, ?, ?, ?)
+        """, (title, content, category_id, updated_at))
+        conn.commit()
+
+        # 👉 2. ดึง path ของหมวดหมู่
+        cursor.execute("SELECT path FROM categories WHERE id = ?", (category_id,))
+        category = cursor.fetchone()
+        if category:
+            category_path = category["path"]
+            folder_path = os.path.join("data_base", category_path)
+            os.makedirs(category_path, exist_ok=True)
+
+            # 👉 3. สร้างชื่อไฟล์ .txt จากชื่อบทความ (sanitize)
+            filename = f"{sanitize_filename(title)}.txt"
+            file_path = os.path.join(category_path, filename)
+
+            # 👉 4. เขียนไฟล์บทความลงไฟล์ .txt
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content.strip())
+
+        conn.close()
+        flash("✅ เพิ่มบทความและสร้างไฟล์เรียบร้อยแล้ว", "success")
+        return redirect(url_for("add_article"))
+
+    # 👉 โหลดหมวดหมู่ (เฉพาะที่ไม่ขึ้นต้นด้วย h_)
+    cursor.execute("SELECT id, name FROM categories ORDER BY name")
+    all_categories = cursor.fetchall()
+    categories = [
+        (row["id"], row["name"])
+        for row in all_categories
+        if not row["name"].startswith("h_")
+    ]
+
+    conn.close()
+    return render_template("add_article.html", categories=categories)
+
+@app.context_processor
+def inject_user():
+    user = get_user(session['user_id']) if 'user_id' in session else None
+    return dict(user=user)
+
+@app.route('/like_post', methods=['POST'])
+def like_post_route():
+    return like_post()
+
+if __name__ == "__main__":
+    load_data()  # โหลดข้อมูลจากไฟล์ก่อน
+    setup_app(app)
+    app.run(debug=True)
+
+
+#accounts.py
+from flask import Blueprint, render_template, redirect, url_for, session, flash, request
+from werkzeug.utils import secure_filename
+import os
+from lib.database2 import get_db  # นำเข้า get_db จาก database.py เพื่อหลีกเลี่ยง circular import
+from lib.utils import allowed_file  # Import ฟังก์ชันจาก utils
+
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+account_blueprint = Blueprint('account', __name__)
+
+# ตรวจสอบและสร้างโฟลเดอร์อัปโหลดหากยังไม่มี
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+
+# Route สำหรับหน้า บัญชีของฉัน
+@account_blueprint.route('/account', methods=['GET'])
+def account():
+    if 'user_id' in session:
+        user_id = session['user_id']
+        db = get_db()
+        user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return render_template('account.html', user=user)
+    return redirect(url_for('auth.login'))
+
+# Route สำหรับการแก้ไขข้อมูลส่วนตัว
+@account_blueprint.route('/account/edit', methods=['GET', 'POST'])
+def edit_account():
+    if 'user_id' not in session:
+        return redirect(url_for('auth.login'))
+    
+    user_id = session['user_id']
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+    if request.method == 'POST':
+        firstname = request.form['firstname']
+        lastname = request.form['lastname']
+        email = request.form['email']
+        phone = request.form['phone']
+        address_permanent = request.form['address_permanent']
+        address_current = request.form['address_current']
+        dob = request.form['dob']
+
+        # ตรวจสอบไฟล์รูปโปรไฟล์
+        profile_picture = request.files['profile_picture']
+        if profile_picture and allowed_file(profile_picture.filename):
+            # กำหนดชื่อไฟล์ตามอีเมลและบันทึกไฟล์ใหม่
+            filename = secure_filename(email.replace('@', '_') + '.' + profile_picture.filename.rsplit('.', 1)[1].lower())
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            profile_picture.save(filepath)
+        else:
+            # ใช้รูปโปรไฟล์เดิมถ้าไม่มีการอัปโหลดไฟล์ใหม่
+            filename = user['profile_picture']
+
+        # อัปเดตข้อมูลอื่นๆ
+        db.execute('''
+            UPDATE users SET firstname = ?, lastname = ?, email = ?, phone = ?, address_permanent = ?, 
+            address_current = ?, dob = ?, profile_picture = ? WHERE id = ?
+        ''', (firstname, lastname, email, phone, address_permanent, address_current, dob, filename, user_id))
+        db.commit()
+        flash('ข้อมูลส่วนตัวถูกอัปเดตเรียบร้อยแล้ว')
+        return redirect(url_for('account.account'))
+    
+    return render_template('edit_account.html', user=user)
+
+#auth.py
+from flask import session, redirect, url_for, flash
+from werkzeug.security import generate_password_hash, check_password_hash
+from lib.database2 import get_db, get_user
+from werkzeug.utils import secure_filename
+import os
+import sqlite3  # นำเข้า sqlite3
+from lib.utils import allowed_file  # Import ฟังก์ชันจาก utils
+from functools import wraps
+
+# ฟังก์ชันตรวจสอบสิทธิ์ผู้ใช้
+def check_user_permission(required_rank):
+    def wrapper(func):
+        @wraps(func)
+        def decorated_view(*args, **kwargs):
+            if 'user_id' not in session:
+                flash("คุณต้องเข้าสู่ระบบก่อน")
+                return redirect(url_for('login'))
+            user = get_user(session['user_id'])
+            if user and user['rank'] == required_rank:
+                return func(*args, **kwargs)
+            flash("คุณไม่มีสิทธิเข้าถึงหน้านี้")
+            return redirect(url_for('home.home'))
+        return decorated_view
+    return wrapper
+
+
+# กำหนดโฟลเดอร์สำหรับอัปโหลดรูปภาพ
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+# ตรวจสอบว่าโฟลเดอร์อัปโหลดมีอยู่หรือไม่ ถ้าไม่มีก็สร้างขึ้น
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+# ฟังก์ชันสำหรับบันทึกไฟล์รูปภาพ
+def save_profile_picture(profile_picture, email):
+    if profile_picture and allowed_file(profile_picture.filename):
+        file_extension = profile_picture.filename.rsplit('.', 1)[1].lower()
+        filename = secure_filename(f"{email.replace('@', '_')}.{file_extension}")
+        filepath = os.path.join('static/uploads', filename)
+        profile_picture.save(filepath)
+        return filename
+    else:
+        flash('ไฟล์รูปโปรไฟล์ไม่รองรับ ควรเป็นไฟล์ประเภท png, jpg, jpeg หรือ gif')
+        return None
+
+# ฟังก์ชันลงทะเบียนผู้ใช้
+def register_user(form_data, profile_picture):
+    firstname = form_data['firstname']
+    lastname = form_data['lastname']
+    email = form_data['email']
+    password = generate_password_hash(form_data['password'])
+    phone = form_data['phone']  # เบอร์โทรศัพท์
+    address_permanent = form_data['address_permanent']  # ที่อยู่ถาวร
+    address_current = form_data['address_current']  # ที่อยู่ปัจจุบัน
+    dob = form_data['dob']  # วันเดือนปีเกิด
+
+    # บันทึกไฟล์รูปภาพโดยใช้ชื่อไฟล์เป็นอีเมล
+    profile_filename = save_profile_picture(profile_picture, email)
+
+    db = get_db()
+    try:
+        # ฟิลด์ registered_date จะใช้ค่า DEFAULT CURRENT_TIMESTAMP โดยอัตโนมัติ
+        db.execute(
+            '''
+            INSERT INTO users (firstname, lastname, email, password, phone, address_permanent, address_current, dob, profile_picture) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (firstname, lastname, email, password, phone, address_permanent, address_current, dob, profile_filename)
+        )
+        db.commit()
+
+        # เก็บ user_id ลงใน session
+        user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        session['user_id'] = user['id']
+    except sqlite3.IntegrityError:
+        flash('อีเมลนี้มีการใช้งานแล้ว')
+
+# ฟังก์ชันสำหรับตรวจสอบข้อมูลผู้ใช้
+def authenticate_user(email, password):
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+
+    if user and check_password_hash(user['password'], password):
+        session['user_id'] = user['id']
+        return True
+    else:
+        flash('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+        return False
+
+#content.py
+from flask import Blueprint, render_template, send_from_directory, request, abort, Response
+import os
+import sqlite3
+from docx import Document
+from gtts import gTTS
+from lib.database import DB_FILE, get_db_connection
+from lib.utils import sanitize_filename
+
+content_bp = Blueprint("content", __name__)
+DOWNLOAD_FOLDER = "downloads"
+ARTICLE_FOLDER = "articles"
+AUDIO_FOLDER = "static/audio"
+
+def get_file_size(file_path):
+    if os.path.exists(file_path):
+        size = os.path.getsize(file_path) / (1024 * 1024)
+        return f"{size:.2f} MB"
+    return "ไม่พบไฟล์"
+
+def convert_docx_to_html(file_path):
+    doc = Document(file_path)
+    html_content = ""
+    for para in doc.paragraphs:
+        text = para.text
+        if text.startswith("download_file="):
+            filename = text.split("=")[1].strip()
+            file_path = os.path.join(DOWNLOAD_FOLDER, filename)
+            file_size = get_file_size(file_path)
+            download_link = f'<a href="{request.host_url}download/{filename}" class="btn btn-success">📥 Download {filename} ({file_size})</a>'
+            html_content += f"<p>{download_link}</p>\n"
+        else:
+            html_content += f"<p>{text}</p>\n"
+    return html_content
+
+@content_bp.route("/download/<filename>")
+def download_file(filename):
+    file_path = os.path.join(DOWNLOAD_FOLDER, filename)
+    if not os.path.exists(file_path):
+        abort(404, description="ไม่พบไฟล์")
+    return send_from_directory(DOWNLOAD_FOLDER, filename, as_attachment=True)
+
+@content_bp.route("/content/<int:article_id>")
+def content(article_id):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT title, content, category_id FROM articles WHERE id=?", (article_id,))
+    article = cursor.fetchone()
+    conn.close()
+
+    if not article:
+        return "ไม่พบบทความนี้"
+
+    title, content, category_id = article
+    new_content = []
+    lines = content.split("\n")
+    for line in lines:
+        if line.startswith("download_file="):
+            filename = line.split("=")[1].strip()
+            file_path = os.path.join(DOWNLOAD_FOLDER, filename)
+            file_size = get_file_size(file_path)
+            file_ext = filename.split(".")[-1].lower()
+
+            if file_ext in ["mp3", "wav", "ogg"]:
+                player_html = f'''
+                <audio id="{filename}" controls>
+                    <source src="{request.host_url}download/{filename}" type="audio/{file_ext}">
+                    Your browser does not support the audio tag.
+                </audio>
+                '''
+            elif file_ext in ["mp4", "mov"]:
+                player_html = f'''
+                <video id="{filename}" width="600" controls>
+                    <source src="{request.host_url}download/{filename}" type="video/{file_ext}">
+                    Your browser does not support the video tag.
+                </video>
+                '''
+            else:
+                player_html = f'<a href="{request.host_url}download/{filename}" class="btn btn-success">📥 Download {filename} ({file_size})</a>'
+
+            new_content.append(player_html)
+
+        elif line.startswith("media_file="):
+            filename = line.split("=")[1].strip()
+            file_path = os.path.join(ARTICLE_FOLDER, filename)
+            file_size = get_file_size(file_path)
+            file_ext = filename.split(".")[-1].lower()
+            media_url = f"{request.host_url}media/{filename}"
+
+            if file_ext in ["mp3", "wav", "ogg"]:
+                player_html = f'''
+                <audio id="{filename}" controls>
+                    <source src="{media_url}" type="audio/{file_ext}">
+                    Your browser does not support the audio tag.
+                </audio>
+                '''
+            elif file_ext in ["mp4", "mov"]:
+                player_html = f'''
+                <video id="{filename}" width="600" controls>
+                    <source src="{media_url}" type="video/{file_ext}">
+                    Your browser does not support the video tag.
+                </video>
+                '''
+            else:
+                player_html = f'<a href="{media_url}" class="btn btn-success">📥 Download {filename} ({file_size})</a>'
+
+            new_content.append(player_html)
+        else:
+            new_content.append(line)
+
+    content_html = "<br>".join(new_content)
+
+    # ✅ สร้าง path ไฟล์เสียงที่เกี่ยวข้อง
+    audio_filename = f"{sanitize_filename(title)}.mp3"
+    tts_path = os.path.join(AUDIO_FOLDER, audio_filename)
+    tts_url = f"/{tts_path}" if os.path.exists(tts_path) else None
+
+    return render_template("content.html", title=title, content=content_html, category_id=category_id, tts_url=tts_url, article_id=article_id)
+
+@content_bp.route("/tts/<int:article_id>")
+def generate_tts(article_id):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT content FROM articles WHERE id=?", (article_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        abort(404, description="ไม่พบบทความนี้")
+
+    text = row[0]
+    tts = gTTS(text=text, lang="th")
+    os.makedirs(AUDIO_FOLDER, exist_ok=True)
+    audio_filename = f"article_{article_id}.mp3"
+    file_path = os.path.join(AUDIO_FOLDER, audio_filename)
+    tts.save(file_path)
+
+    return send_from_directory(AUDIO_FOLDER, audio_filename)
+
+@content_bp.route("/media/<filename>")
+def media_file(filename):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT category_id FROM articles WHERE content LIKE ?", (f"media_file={filename}",))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        abort(404, description="ไม่พบไฟล์")
+
+    category_id = row["category_id"]
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT path FROM categories WHERE id = ?", (category_id,))
+    category = cursor.fetchone()
+    conn.close()
+
+    if category is None:
+        abort(404, description="ไม่พบหมวดหมู่")
+
+    category_path = category["path"]
+    file_path = os.path.join(category_path, filename)
+
+    if not os.path.exists(file_path):
+        abort(404, description="ไม่พบไฟล์")
+
+    return send_from_directory(category_path, filename, mimetype="audio/mpeg" if filename.endswith(".mp3") else "video/mp4")
+
+#database.py
+import sqlite3
+import os
+from datetime import datetime
+from docx import Document
+
+DB_FILE = "database.db"
+DATA_DIR = "data_base"
+LOG_FILE = "log.txt"
+BATCH_SIZE = 10  # Commit ทุก 10 ไฟล์
+VALID_EXTENSIONS = [".txt", ".docx", ".mp3", ".wav", ".ogg", ".mp4", ".mov"]
+
+def log_message(message):
+    """ ฟังก์ชันบันทึกข้อความลง log.txt """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as log:
+        log.write(f"[{timestamp}] {message}\n")
+
+def get_db_connection():
+    """ เชื่อมต่อฐานข้อมูล SQLite """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except sqlite3.Error as e:
+        log_message(f"Database error: {e}")
+        return None
+
+def ensure_tables_exist():
+    """ สร้างตารางถ้ายังไม่มี """
+    conn = get_db_connection()
+    if conn is None:
+        return
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            path TEXT,
+            parent_id INTEGER
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            content TEXT,
+            category_id INTEGER,
+            updated_at TEXT,
+            UNIQUE(title, category_id)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def cleanup_deleted_files():
+    """ ลบบทความออกจากฐานข้อมูลถ้าไฟล์ถูกลบไปแล้ว และรีเซ็ต sequence """
+    conn = get_db_connection()
+    if conn is None:
+        return
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, category_id FROM articles")
+    articles = cursor.fetchall()
+    deleted_articles = []
+    for article_id, title, category_id in articles:
+        cursor.execute("SELECT path FROM categories WHERE id=?", (category_id,))
+        category_path_result = cursor.fetchone()
+        if category_path_result:
+            category_path = category_path_result["path"]
+            file_exists = any(
+                os.path.exists(os.path.join(category_path, f"{title}{ext}")) for ext in VALID_EXTENSIONS
+            )
+            if not file_exists:
+                log_message(f"🛑 ลบจาก SQL เพราะหาไฟล์ไม่เจอ: {title} (ID: {article_id})")
+                deleted_articles.append((article_id,))
+    if deleted_articles:
+        cursor.executemany("DELETE FROM articles WHERE id=?", deleted_articles)
+        conn.commit()
+        cursor.execute("UPDATE sqlite_sequence SET seq = (SELECT COUNT(*) FROM articles) WHERE name = 'articles'")
+        conn.commit()
+    conn.close()
+
+def cleanup_deleted_categories():
+    """ ลบหมวดหมู่ที่ไม่มีโฟลเดอร์อยู่แล้วออกจากฐานข้อมูล และรีเซ็ตจำนวน categories """
+    conn = get_db_connection()
+    if conn is None:
+        return
+    cursor = conn.cursor()
+
+    # ✅ ดึงข้อมูลหมวดหมู่ทั้งหมดจากฐานข้อมูล
+    cursor.execute("SELECT id, name, path FROM categories")
+    categories = cursor.fetchall()
+
+    deleted_categories = []
+    for category in categories:
+        category_id, category_name, category_path = category
+
+        # ✅ ตรวจสอบว่าโฟลเดอร์หมวดหมู่ยังมีอยู่หรือไม่
+        if not os.path.exists(category_path):
+            deleted_categories.append((category_id, category_name, category_path))
+
+    if deleted_categories:
+        print(f"🔴 กำลังลบหมวดหมู่ที่ไม่มีโฟลเดอร์อยู่แล้วทั้งหมด {len(deleted_categories)} รายการ...")
+
+        for category_id, category_name, category_path in deleted_categories:
+            print(f"🗑️ ลบหมวดหมู่จาก SQL: {category_name} (Path: {category_path})")
+
+            # ✅ ลบ `articles` ที่อยู่ในหมวดหมู่นี้ก่อน
+            cursor.execute("DELETE FROM articles WHERE category_id=?", (category_id,))
+
+            # ✅ ลบ `subcategories` ที่อยู่ในหมวดหมู่นี้
+            cursor.execute("DELETE FROM categories WHERE parent_id=?", (category_id,))
+
+            # ✅ ลบ `categories` เอง
+            cursor.execute("DELETE FROM categories WHERE id=?", (category_id,))
+            conn.commit()
+
+            log_message(f"🗑️ ลบหมวดหมู่ที่ไม่มีโฟลเดอร์แล้ว: {category_name}")
+
+        # ✅ รีเซ็ต `sqlite_sequence` ของ `categories`
+        cursor.execute("UPDATE sqlite_sequence SET seq = (SELECT COUNT(*) FROM categories) WHERE name = 'categories'")
+        conn.commit()
+
+    # ✅ ตรวจสอบจำนวนหมวดหมู่หลังลบ
+    cursor.execute("SELECT COUNT(*) FROM categories")
+    count_final = cursor.fetchone()[0]
+    print(f"✅ จำนวนหมวดหมู่ที่เหลืออยู่: {count_final}")
+    log_message(f"✅ จำนวนหมวดหมู่ที่เหลืออยู่: {count_final}")
+
+    conn.close()
+
+def load_data():
+    """ โหลดข้อมูลจากโฟลเดอร์เข้าสู่ฐานข้อมูล """
+    conn = get_db_connection()
+    if conn is None:
+        return
+    cursor = conn.cursor()
+    for category in os.listdir(DATA_DIR):
+        category_path = os.path.join(DATA_DIR, category)
+        if not os.path.isdir(category_path):
+            continue
+        cursor.execute("SELECT id FROM categories WHERE name=?", (category,))
+        result = cursor.fetchone()
+        category_id = result["id"] if result else None
+        if category_id is None:
+            cursor.execute("INSERT INTO categories (name, path, parent_id) VALUES (?, ?, ?)",
+                           (category, category_path, None))
+            category_id = cursor.lastrowid
+        for subcategory in os.listdir(category_path):
+            subcategory_path = os.path.join(category_path, subcategory)
+            if not os.path.isdir(subcategory_path):
+                continue
+            cursor.execute("SELECT id FROM categories WHERE name=? AND parent_id=?", (subcategory, category_id))
+            result = cursor.fetchone()
+            subcategory_id = result["id"] if result else None
+            if subcategory_id is None:
+                cursor.execute("INSERT INTO categories (name, path, parent_id) VALUES (?, ?, ?)",
+                               (subcategory, subcategory_path, category_id))
+                subcategory_id = cursor.lastrowid
+            for file in os.listdir(subcategory_path):
+                ext = os.path.splitext(file)[-1].lower()
+                if ext not in VALID_EXTENSIONS:
+                    continue
+                file_path = os.path.join(subcategory_path, file)
+                title = os.path.splitext(file)[0]
+                file_mtime = int(os.path.getmtime(file_path))
+                if ext == ".docx":
+                    doc = Document(file_path)
+                    content = "\n".join([p.text for p in doc.paragraphs])
+                elif ext in [".mp3", ".wav", ".ogg", ".mp4", ".mov"]:
+                    content = f"media_file={file}"
+                else:
+                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                        content = f.read()
+                cursor.execute("SELECT id FROM articles WHERE title=? AND category_id=?", (title, subcategory_id))
+                existing_article = cursor.fetchone()
+                if existing_article:
+                    cursor.execute("UPDATE articles SET content=?, updated_at=? WHERE id=?",
+                                   (content, file_mtime, existing_article["id"]))
+                else:
+                    cursor.execute("INSERT INTO articles (title, content, category_id, updated_at) VALUES (?, ?, ?, ?)",
+                                   (title, content, subcategory_id, file_mtime))
+    conn.commit()
+    conn.close()
+
+# ✅ ตรวจสอบและสร้างตารางหากยังไม่มี
+ensure_tables_exist()
+# ✅ โหลดข้อมูลก่อน เพื่อให้แน่ใจว่าทุกอย่างอยู่ในฐานข้อมูล
+load_data()
+# ✅ จากนั้นค่อยทำความสะอาดบทความที่ไม่มีไฟล์แล้ว
+cleanup_deleted_files()
+# ✅ ลบหมวดหมู่ที่ไม่มีโฟลเดอร์แล้วออกจากฐานข้อมูล
+cleanup_deleted_categories()
+
+#database2.py
+# lib/database.py
+import sqlite3
+from flask import g
+
+DATABASE = 'blind_service.db'
+
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(DATABASE)
+        g.db.row_factory = sqlite3.Row
+    return g.db
+
+def close_db(e=None):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+
+def init_db(app):
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                firstname TEXT NOT NULL,
+                lastname TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                address_permanent TEXT NOT NULL,
+                address_current TEXT NOT NULL,
+                dob DATE,
+                profile_picture TEXT,
+                rank TEXT NOT NULL DEFAULT 'user_default',
+                registered_date DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS post_likes (
+                user_id INTEGER,
+                post_title TEXT,
+                service_id INTEGER,
+                is_like INTEGER,
+                PRIMARY KEY (user_id, post_title, service_id)
+            )
+        ''')
+        # เพิ่มดัชนีสำหรับ email และ id
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_email ON users (email);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON users (id);")
+        db.commit()
+
+def update_user_rank(user_id, new_rank):
+    db = get_db()
+    db.execute("UPDATE users SET rank = ? WHERE id = ?", (new_rank, user_id))
+    db.commit()
+
+def update_user_rank_by_email(email, new_rank):
+    user = get_user(email, by_email=True)
+    if user:
+        update_user_rank(user['id'], new_rank)
+        return True
+    return False
+
+def get_user(identifier, by_email=False):
+    db = get_db()
+    cursor = db.cursor()
+    if by_email:
+        cursor.execute("SELECT * FROM users WHERE email = ?", (identifier,))
+    else:
+        cursor.execute("SELECT * FROM users WHERE id = ?", (identifier,))
+    return cursor.fetchone()
+
+def setup_app(app):
+    with app.app_context():
+        init_db(app)
+        update_user_rank_by_email('arkarachaiwww123@gmail.com', 'user_administrator_and_manage_systems')
+
+#home.py
+from flask import Blueprint, render_template, session
+import sqlite3
+from lib.database import DB_FILE
+import os
+from lib.utils import get_greeting
+from lib.auth import get_user
+
+home_bp = Blueprint("home", __name__)
+TITLE_FOLDER = "title"
+
+@home_bp.route("/")
+def home():
+    """ โหลดหมวดหมู่หลักและหมวดหมู่ย่อยจากฐานข้อมูล """
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    # ✅ ดึงหมวดหมู่หลัก และตัด "h_" ออก
+    cursor.execute("SELECT id, name FROM categories WHERE parent_id IS NULL")
+    categories = {id: {"name": name[2:] if name.startswith("h_") else name, "subcategories": []} for id, name in cursor.fetchall()}
+
+    # ✅ ดึงหมวดหมู่ย่อย และเพิ่มเข้าไปใน `categories`
+    cursor.execute("SELECT id, name, parent_id FROM categories WHERE parent_id IS NOT NULL")
+    for sub_id, sub_name, parent_id in cursor.fetchall():
+        if parent_id in categories:
+            categories[parent_id]["subcategories"].append((sub_id, sub_name))
+
+    # ✅ ดึงบทความล่าสุด
+    cursor.execute("SELECT id, title FROM articles ORDER BY updated_at DESC LIMIT 5")
+    latest_articles = cursor.fetchall()
+
+    conn.close()
+
+    # อ่านไฟล์ในโฟลเดอร์ 'title'
+    title_contents = []
+    if os.path.exists(TITLE_FOLDER):
+        for filename in os.listdir(TITLE_FOLDER):
+            if filename.endswith(".txt"):
+                filepath = os.path.join(TITLE_FOLDER, filename)
+                with open(filepath, "r", encoding="utf-8") as f:
+                    content = f.read().strip().replace("\n", "<br>")
+                    heading = os.path.splitext(filename)[0]
+                    title_contents.append({"heading": heading, "content": content})
+
+    greeting = get_greeting()  # ✅ เรียกใช้ฟังก์ชัน
+    user_id = session.get("user_id")
+    user = get_user(user_id) if user_id else None
+
+    return render_template(
+        "index.html",
+        greeting=greeting,
+        user=user,
+        categories=categories.items(),
+        latest_articles=latest_articles,
+        title_contents=title_contents
+    )
+#posts.py
+# lib/posts.py
+import os
+from datetime import datetime
+from flask import flash
+from lib.database2 import get_user
+from lib.service_centers import get_service_name, get_all_service_centers
+from lib.utils import allowed_file, create_folder_if_not_exists  # ปรับการนำเข้า allowed_file และ create_folder_if_not_exists
+
+# สร้างโฟลเดอร์ตาม ID ศูนย์บริการและอีเมลของผู้ใช้
+def create_service_folder(service_id, email=None):
+    service_name = get_service_name(service_id)  
+    folder_path = os.path.join('txt', service_name, email) if email else os.path.join('txt', service_name)
+    create_folder_if_not_exists(folder_path)
+    return folder_path
+
+def handle_post(service_id, title, content, saved_images, firstname, lastname, user_rank, email):
+    folder_path = create_service_folder(service_id, email)
+    post_filepath = os.path.join(folder_path, f"{title}.txt")
+    cleaned_content = content.strip().replace("\r\n", "\n")
+    
+    with open(post_filepath, 'w', encoding='utf-8') as f:
+        f.write(f"โพสต์โดย: {firstname} {lastname} ({user_rank})\n")
+        f.write(f"เวลา: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]}\n\n")
+        if saved_images:
+            f.write("รูปภาพที่แนบมา:\n")
+            for image_name in saved_images:
+                f.write(f"- {image_name}\n")
+        f.write("รายละเอียด:\n")
+        f.write(cleaned_content)
+# ดึงข้อมูลโพสต์ทั้งหมดของศูนย์บริการ
+def get_posts(service_id):
+    folder_path = create_service_folder(service_id)
+    posts = []
+    if not os.path.exists(folder_path):
+        return posts
+
+    for user_email in os.listdir(folder_path):
+        user_folder_path = os.path.join(folder_path, user_email)
+        if os.path.isdir(user_folder_path):
+            for filename in os.listdir(user_folder_path):
+                if filename.endswith('.txt') and not filename.endswith('_comment.txt'):
+                    file_path = os.path.join(user_folder_path, filename)
+                    content = read_post_content(file_path)
+                    user = get_user(user_email, by_email=True)
+                    
+                    posts.append({
+                        'title': filename[:-4],
+                        'content': content,
+                        'author': f"{user['firstname']} {user['lastname']}" if user else "Unknown",
+                        'rank': user['rank'] if user else "Unknown",
+                        'profile_picture': user['profile_picture'] if user else 'default_profile.png',
+                        'date': os.path.getmtime(file_path)
+                    })
+    return sorted(posts, key=lambda x: x['date'], reverse=True)
+
+# อ่านเนื้อหาโพสต์ และดึงเฉพาะ 5 บรรทัดแรก
+def read_post_content(file_path, limit_lines=False):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+        
+    post_time = lines[1].strip() if len(lines) > 1 else "ไม่ทราบเวลา"
+    content = "".join(lines)
+    details_index = content.find("รายละเอียด:")
+    
+    if details_index != -1:
+        content = content[details_index + len("รายละเอียด:"):].strip()
+    
+    content = f"เวลาโพสต์: {post_time}<br><br>{content}"
+    
+    # ดึง 5 บรรทัดแรกถ้าต้องการจำกัดบรรทัด
+    return "<br>".join(content.split("<br>")[:5]) if limit_lines else content
+
+# ดึงโพสต์ล่าสุดโดยจำกัดที่ 5 โพสต์แรก
+def get_latest_posts():
+    posts = []
+    
+    # Loop through all service centers (assuming service center folders exist)
+    for service_id, service_name in get_all_service_centers().items():
+        service_folder = create_service_folder(service_id)
+        
+        if not os.path.exists(service_folder):
+            continue
+        
+        # Loop through all user folders
+        for user_email in os.listdir(service_folder):
+            user_folder = os.path.join(service_folder, user_email)
+            
+            if os.path.isdir(user_folder):
+                # Loop through all post files in each user folder
+                for filename in os.listdir(user_folder):
+                    if filename.endswith('.txt') and not filename.endswith('_comment.txt'):
+                        file_path = os.path.join(user_folder, filename)
+                        content = read_post_content(file_path)
+                        
+                        # ดึงแค่ 5 บรรทัดแรกของเนื้อหา
+                        first_5_lines = "<br>".join(content.splitlines()[:5])
+                        
+                        # เพิ่มรายละเอียดโพสต์เข้าไปในรายการ posts
+                        posts.append({
+                            'title': filename[:-4],  # ลบส่วนขยาย .txt สำหรับชื่อเรื่อง
+                            'content': first_5_lines,  # แสดงเฉพาะ 5 บรรทัดแรก
+                            'file_path': file_path,  # ใช้ในการเชื่อมโยงไปยังรายละเอียดโพสต์
+                            'service_id': service_id,
+                        })
+    
+    # เรียงโพสต์ตามวันที่ และแสดงโพสต์ล่าสุด 5 รายการ
+    sorted_posts = sorted(posts, key=lambda x: os.path.getmtime(x['file_path']), reverse=True)[:5]
+    
+    return sorted_posts
+
+def get_post_images(post_id):
+    post_folder = os.path.join('static', 'uploads', str(post_id))
+    return [
+        filename for filename in os.listdir(post_folder) if allowed_file(filename)
+    ] if os.path.exists(post_folder) else []
+#post_actions.py
+# lib/post_actions.py
+import os
+from datetime import datetime
+from flask import redirect, url_for, flash
+from lib.database2 import get_user  # ใช้ get_user แทน get_user_by_email
+from lib.service_centers import get_service_name  # Import service name function
+from flask import session, request, jsonify
+from lib.database2 import get_db
+
+# Function to log actions into log.txt
+def log_action(action, details=""):
+    with open('log.txt', 'a', encoding='utf-8') as log_file:
+        log_file.write(f"{datetime.now()} - {action}: {details}\n")
+
+# Check if the user is the post owner
+def check_post_owner(service_id, post_title, email):
+    if email is None:
+        log_action("Email not provided", "Failed to check post ownership")
+        return False
+
+    service_name = get_service_name(service_id)  # Get service name using the centralized function
+    post_folder = os.path.join('txt', service_name, email)
+    post_filepath = os.path.join(post_folder, f"{post_title}.txt")
+    return os.path.exists(post_filepath)
+
+# Save comments to a file
+def save_comment(service_id, post_title, comment_content, firstname, lastname, user_email, post_owner_email):
+    service_name = get_service_name(service_id)
+    post_folder = os.path.join('txt', service_name, post_owner_email)
+    
+    if not os.path.exists(post_folder):
+        os.makedirs(post_folder)
+
+    comment_filename = f"{post_title}_comment.txt"
+    comment_filepath = os.path.join(post_folder, comment_filename)
+
+    comment_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-4]
+
+    # Save the comment with email for easy profile picture lookup
+    with open(comment_filepath, 'a', encoding='utf-8') as f:
+        f.write(f"{firstname} {lastname} ({user_email}):{comment_content}:{comment_time}\n")
+
+# Fetch the post content and associated comments
+def get_post_and_comments(service_id, post_title, post_owner_email):
+    service_name = get_service_name(service_id)
+    post_folder = os.path.join('txt', service_name, post_owner_email)
+
+    if not os.path.exists(post_folder):
+        return "ไม่พบโพสต์", []
+
+    post_filepath = os.path.join(post_folder, f"{post_title}.txt")
+    if not os.path.exists(post_filepath):
+        return "ไม่พบโพสต์", []
+
+    post_content = read_post_content(post_filepath)
+    comments = []
+    comment_filepath = os.path.join(post_folder, f"{post_title}_comment.txt")
+
+    if os.path.exists(comment_filepath):
+        with open(comment_filepath, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            for line in lines:
+                parsed = line.strip().split(':', 2)
+                if len(parsed) == 3:
+                    author_info, content, timestamp = parsed
+                    # ดึง user_id ที่เป็นตัวเลขจากอีเมล
+                    email = author_info.split("(")[-1].strip(")")
+                    user = get_user(email, by_email=True)
+                    if user:
+                        profile_picture = user['profile_picture']
+                        user_id = user['id']
+                    else:
+                        profile_picture = 'default_profile.png'
+                        user_id = None
+                    
+                    comments.append({
+                        'author': author_info,
+                        'content': content,
+                        'user_id': user_id,  # ใช้ user_id ที่เป็นตัวเลข
+                        'time': timestamp,
+                        'profile_picture': profile_picture
+                    })
+
+    return post_content, comments
+
+def read_post_content(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+    
+    content = "".join(lines)
+    details_index = content.find("รายละเอียด:")
+    if details_index != -1:
+        content = content[details_index + len("รายละเอียด:"):].strip()
+
+    return content
+
+def get_post_owner_email(service_id, post_title):
+    service_name = get_service_name(service_id)
+    service_folder = os.path.join('txt', service_name)
+
+    for user_email in os.listdir(service_folder):
+        user_folder = os.path.join(service_folder, user_email)
+        if os.path.isdir(user_folder):
+            post_filepath = os.path.join(user_folder, f"{post_title}.txt")
+            if os.path.exists(post_filepath):
+                log_action("Post owner found", f"Owner: {user_email}")
+                return user_email
+
+    log_action("Post owner not found", f"Service ID: {service_id}, Post Title: {post_title}")
+    return None
+
+# Function to delete a comment
+def delete_comment(service_id, post_title, comment_author, comment_time, user_email):
+    service_name = get_service_name(service_id)
+    comment_filepath = os.path.join('txt', service_name, user_email, f"{post_title}_comment.txt")
+
+    if not os.path.exists(comment_filepath):
+        log_action("Comment file not found", comment_filepath)
+        return False
+
+    updated_comments = []
+    with open(comment_filepath, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        for line in lines:
+            parsed = line.strip().split(":", 2)
+            if len(parsed) == 3 and (parsed[0] != comment_author or parsed[2] != comment_time):
+                updated_comments.append(line)
+
+    with open(comment_filepath, 'w', encoding='utf-8') as f:
+        f.writelines(updated_comments)
+
+    log_action("Comment deleted", f"Service ID: {service_id}, Post Title: {post_title}, Author: {comment_author}, Comment Time: {comment_time}")
+    return True
+
+# Function to edit a comment
+def edit_comment(service_id, post_title, comment_author, comment_time, new_content, user_email):
+    service_name = get_service_name(service_id)
+    comment_filepath = os.path.join('txt', service_name, user_email, f"{post_title}_comment.txt")
+
+    if not os.path.exists(comment_filepath):
+        log_action("Comment file not found", comment_filepath)
+        return False
+
+    updated_comments = []
+    with open(comment_filepath, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        for line in lines:
+            parsed = line.strip().split(":", 2)
+            if len(parsed) == 3 and parsed[0] == comment_author and parsed[2] == comment_time:
+                updated_comments.append(f"{parsed[0]}:{new_content}:{parsed[2]}\n")
+            else:
+                updated_comments.append(line)
+
+    with open(comment_filepath, 'w', encoding='utf-8') as f:
+        f.writelines(updated_comments)
+
+    log_action("Comment edited", f"Service ID: {service_id}, Post Title: {post_title}, Author: {comment_author}, Comment Time: {comment_time}")
+    return True
+
+from flask import jsonify
+
+def like_post():
+    if 'user_id' not in session:
+        return jsonify({'error': 'กรุณาเข้าสู่ระบบก่อน'}), 403
+
+    user_id = session['user_id']
+    data = request.json
+    post_title = data['post_title']
+    service_id = data['service_id']
+    is_like = data['is_like']
+
+    with get_db() as conn:  # Using context manager for the connection
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO post_likes (user_id, post_title, service_id, is_like)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id, post_title, service_id)
+            DO UPDATE SET is_like=excluded.is_like
+        """, (user_id, post_title, service_id, is_like))
+        conn.commit()
+
+        # Get the latest like/dislike count
+        like_count = cursor.execute("SELECT COUNT(*) FROM post_likes WHERE post_title=? AND service_id=? AND is_like=1", (post_title, service_id)).fetchone()[0]
+        dislike_count = cursor.execute("SELECT COUNT(*) FROM post_likes WHERE post_title=? AND service_id=? AND is_like=0", (post_title, service_id)).fetchone()[0]
+
+    return jsonify({'likes': like_count, 'dislikes': dislike_count})
+
+def get_post_like_counts(service_id, post_title):
+    with get_db() as conn:  # Using context manager for the connection
+        cursor = conn.cursor()
+
+        likes = cursor.execute("SELECT COUNT(*) FROM post_likes WHERE post_title=? AND service_id=? AND is_like=1", (post_title, service_id)).fetchone()[0]
+        dislikes = cursor.execute("SELECT COUNT(*) FROM post_likes WHERE post_title=? AND service_id=? AND is_like=0", (post_title, service_id)).fetchone()[0]
+
+    return likes, dislikes
+
+#search.py
+from flask import Blueprint, render_template, request
+from lib.database import get_db_connection
+
+search_bp = Blueprint("search", __name__)
+
+@search_bp.route("/search", methods=["GET"])
+def search():
+    query = request.args.get("q", "").strip()
+
+    if not query:
+        return render_template("search.html", query=query, results=[])
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT id, title, content FROM articles
+        WHERE title LIKE ? OR content LIKE ?
+    """, (f"%{query}%", f"%{query}%"))
+
+    results = cursor.fetchall()
+    conn.close()
+
+    return render_template("search.html", query=query, results=results)
+
+#service.py
+import sqlite3
+from datetime import datetime
+from flask import Blueprint, render_template
+from lib.database import DB_FILE
+
+service_bp = Blueprint("service", __name__)
+
+@service_bp.route("/service/<int:category_id>")
+def service(category_id):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT name FROM categories WHERE id=?", (category_id,))
+    category_name = cursor.fetchone()[0]
+
+    cursor.execute("SELECT id, name FROM categories WHERE parent_id=?", (category_id,))
+    subcategories = cursor.fetchall()
+
+    cursor.execute("SELECT id, title, updated_at FROM articles WHERE category_id=?", (category_id,))
+    articles = cursor.fetchall()
+
+    conn.close()
+    return render_template("service.html", category_name=category_name, subcategories=subcategories, articles=articles)
+
+#service_centers.py
+# lib/service_centers.py
+SERVICE_CENTERS = {
+    1: 'สร้างกระทู้เพื่อสอบถามข้อมูลหรือพูดคุย',
+    2: 'สร้างกระทู้เพื่อขอความช่วยเหลือ'
+}
+
+def get_all_service_centers():
+    # Return all service centers
+    return SERVICE_CENTERS
+
+def get_service_name(service_id):
+    # Return the name of a specific service center by its ID
+    return SERVICE_CENTERS.get(service_id, f"ศูนย์บริการ {service_id}")
+
+import os
+
+def get_service_intro(service_name):
+    # สร้าง path ของไฟล์แนะนำศูนย์บริการ
+    filename = f"title_{service_name}.txt"
+    file_path = os.path.join('txt', service_name, filename)
+
+    # ตรวจสอบว่าไฟล์มีอยู่หรือไม่ ถ้ามีให้เปิดอ่านและส่งข้อมูลกลับไป
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read().strip()  # ส่งข้อความในไฟล์กลับไป (ลบช่องว่างและบรรทัดว่าง)
+    else:
+        # ถ้าไม่พบไฟล์ ให้ส่งข้อความเริ่มต้นกลับไป
+        return "ยินดีต้อนรับ"
+
+
+#user_management.py
+#lib.user_management.py
+from flask import flash, session, redirect, url_for
+from lib.database2 import get_db
+
+def promote_user_to_admin(user_id):
+    db = get_db()
+    db.execute("UPDATE users SET rank = 'user_admin' WHERE id = ?", (user_id,))
+    db.commit()
+    flash('โปรโมตผู้ใช้เป็นผู้ดูแลระบบเรียบร้อยแล้ว')
+
+def demote_user_to_default(user_id):
+    db = get_db()
+    db.execute("UPDATE users SET rank = 'user_default' WHERE id = ?", (user_id,))
+    db.commit()
+    flash('ลดระดับผู้ใช้เป็นผู้ใช้ทั่วไปเรียบร้อยแล้ว')
+
+def get_user_details(user_id):
+    db = get_db()
+    return db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+def get_all_users():
+    db = get_db()
+    return db.execute("SELECT * FROM users").fetchall()
+
+#utils.py
+#lib.utiles.py
+import os
+from flask import session, flash, redirect, url_for
+from werkzeug.utils import secure_filename
+from lib.database2 import get_user
+
+def get_greeting():
+    if 'user_id' in session and session.get('user_id'):  
+        user = get_user(session['user_id'])
+        if user:
+            rank = user['rank']
+            first_name, last_name = user['firstname'], user['lastname']
+            if rank == 'user_default':
+                return f"ยินดีต้อนรับคุณ {first_name} {last_name} (User default)"
+            elif rank == 'user_admin':
+                return f"ยินดีต้อนรับคุณ {first_name} {last_name} (User admin)"
+            elif rank == 'user_administrator_and_manage_systems':
+                return f"ยินดีต้อนรับคุณ {first_name} {last_name} (System Manager)"
+    return "คุณยังไม่ได้เป็นสมาชิก"
+
+
+def check_user_rank(user_rank, required_rank):
+    if user_rank != required_rank:
+        flash('คุณไม่มีสิทธิเข้าถึงหน้านี้')
+        return redirect(url_for('index'))
+    return None
+
+def create_folder_if_not_exists(folder_path):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def save_image(image, folder):
+    filename = secure_filename(image.filename)
+    filepath = os.path.join(folder, filename)
+    image.save(filepath)
+    return filename
+
+def sanitize_filename(name):
+    import re
+    return re.sub(r'[\\/:"*?<>|]+', "", name).strip()
+
+#404.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>ไม่พบหน้า</title>
+</head>
+<body>
+    <h1>404 - ไม่พบหน้า</h1>
+    <p>ขออภัย เราไม่พบหน้าที่คุณกำลังหา</p>
+    <a href="{{ url_for('home.home') }}">กลับไปหน้าแรก</a>
+</body>
+</html>
+
+#500.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>เกิดข้อผิดพลาด</title>
+</head>
+<body>
+    <h1>500 - เกิดข้อผิดพลาดภายในระบบ</h1>
+    <p>มีปัญหากับเซิร์ฟเวอร์ โปรดลองอีกครั้งในภายหลัง</p>
+    <a href="{{ url_for('home.home') }}">กลับไปหน้าแรก</a>
+</body>
+</html>
+
+#account.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>บัญชีของคุณ</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>บัญชีของคุณ</h1>
+        <p>ชื่อ: {{ user['firstname'] }} {{ user['lastname'] }}</p>
+        <p>อีเมล: {{ user['email'] }}</p>
+        <p>เบอร์โทรศัพท์: {{ user['phone'] }}</p>
+        <p>ที่อยู่ตามทะเบียนบ้าน: {{ user['address_permanent'] }}</p>
+        <p>ที่อยู่ปัจจุบัน: {{ user['address_current'] }}</p>
+        <p>วันเดือนปีเกิด: {{ user['dob'] }}</p>
+
+        <!-- แสดงรูปโปรไฟล์ถ้ามี -->
+        {% if user['profile_picture'] %}
+        <p>รูปโปรไฟล์:</p>
+        <img src="{{ url_for('static', filename='uploads/' + user['profile_picture']) }}" alt="Profile Picture" width="150">
+        {% endif %}
+
+        <a href="{{ url_for('account.edit_account') }}">แก้ไขข้อมูล</a>
+        <a href="{{ url_for('logout') }}">ออกจากระบบ</a>
+
+    </div>
+</body>
+</html>
+
+#add_article.html
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4">📝 เพิ่มบทความใหม่</h2>
+    <form method="POST" action="{{ url_for('add_article') }}">
+        <div class="mb-3">
+            <label for="title" class="form-label">ชื่อบทความ</label>
+            <input type="text" class="form-control" id="title" name="title" required>
+        </div>
+        <div class="mb-3">
+            <label for="content" class="form-label">เนื้อหา</label>
+            <textarea class="form-control" id="content" name="content" rows="8" required></textarea>
+        </div>
+        <div class="mb-3">
+            <label for="category_id" class="form-label">หมวดหมู่</label>
+            <select class="form-select" id="category_id" name="category_id" required>
+                {% for id, name in categories %}
+                <option value="{{ id }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-success">✅ บันทึกบทความ</button>
+    </form>
+</div>
+{% endblock %}
+
+#admin.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Admin - อัปเดตข้อมูลข่าวสาร</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+      <h1>Admin - อัปเดตข้อมูลข่าวสาร</h1>
+      <form action="/post_update" method="POST">
+          <label for="content">เนื้อหา:</label><br>
+          <textarea id="content" name="content" rows="5" cols="50"></textarea><br>
+          <button type="submit">โพสต์</button>
+      </form>
+    </div>
+</body>
+</html>
+
+#admin_dashboard.html
+{% extends "base.html" %}
+
+{% block title %}แผงควบคุมผู้ดูแล{% endblock %}
+
+{% block content %}
+<h2 class="text-primary">🛠 แผงควบคุมผู้ดูแลระบบ</h2>
+<hr>
+<a href="{{ url_for('add_article') }}" class="btn btn-outline-success btn-sm">➕ เพิ่มบทความ</a>
+
+<h4>📋 รายการบทความ</h4>
+<table class="table table-bordered table-hover">
+    <thead class="table-light">
+        <tr>
+            <th>ไอดี</th>
+            <th>ชื่อบทความ</th>
+            <th>มีเสียง</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for article in articles %}
+        <tr>
+            <td>{{ article.id }}</td>
+            <td>{{ article.title }}</td>
+            <td>
+                {% if article.tts_exists %}
+                    ✅
+                {% else %}
+                    ❌
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+
+#base.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}เว็บไซต์ของคุณ{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+      background-color: #f4f6f9;
+    }
+    .info-topbar {
+      background: #f8f9fa;
+      border-bottom: 1px solid #ccc;
+      padding: 10px 20px;
+      font-size: 0.9rem;
+    }
+    .user-profile {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      margin-right: 5px;
+    }
+  </style>
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+
+<!-- Greeting + Clock -->
+<div class="info-topbar text-center">
+  <div id="clockbox" class="mb-1 text-muted">🕓</div>
+  <div id="greetingbox" class="mb-1">👋</div>
+
+  {% if user %}
+    <div class="text-dark mb-1">
+      {% if user.profile_picture %}
+        <img src="{{ url_for('static', filename='uploads/' ~ user.profile_picture) }}" class="user-profile" alt="profile">
+      {% endif %}
+      👤 {{ user.firstname }} {{ user.lastname }} ({{ user.rank }})
+    </div>
+  {% else %}
+    <div class="text-danger mb-1">🔒 คุณยังไม่ได้เข้าสู่ระบบ</div>
+  {% endif %}
+</div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+  <div class="container">
+    <a class="navbar-brand" href="{{ url_for('home.home') }}">เว็บไซต์ของคุณ</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarMain">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('index2') }}">ฟอรั่ม</a></li>
+        {% if 'user_id' in session %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('account') }}">บัญชีของฉัน</a></li>
+          {% if user.rank == 'user_administrator_and_manage_systems' %}
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('manage_users') }}">จัดการบัญชี</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}">จัดการบทความ</a></li>
+          {% elif user.rank == 'user_admin' %}
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}">จัดการบทความ</a></li>
+          {% endif %}
+          <li class="nav-item"><a class="nav-link text-warning" href="{{ url_for('logout') }}">ออกจากระบบ</a></li>
+        {% else %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">เข้าสู่ระบบ</a></li>
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('register') }}">สมัครสมาชิก</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero Section -->
+<div class="bg-light py-4 shadow-sm border-bottom">
+  <div class="container text-center">
+    <h1 class="text-primary">📌 ตอนนี้คุณกำลังเยี่ยมชมอยู่หน้า: {{ self.title() | safe }}</h1>
+
+    {% block page_description %}{% endblock %}
+
+    <!-- Search Bar -->
+    <div class="row justify-content-center mt-4">
+      <div class="col-md-8 col-lg-6">
+        <form class="d-flex" action="{{ url_for('search.search') }}" method="GET">
+          <input class="form-control me-2" type="search" name="q" placeholder="🔍 ค้นหาบทความ..." aria-label="Search">
+          <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i> ค้นหา</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="container mt-4">
+  {% block content %}{% endblock %}
+</div>
+
+<!-- Footer -->
+<footer class="text-center mt-5 bg-dark text-white py-3">
+  <p>© 2025 เว็บไซต์ของคุณ | <a href="#" class="text-light">นโยบายความเป็นส่วนตัว</a></p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function GetClock() {
+    const d = new Date();
+    let nhour = d.getHours();
+    const nmin = d.getMinutes().toString().padStart(2, '0');
+    const nsec = d.getSeconds().toString().padStart(2, '0');
+    const ap = nhour < 12 ? " AM" : " PM";
+    if (nhour === 0) nhour = 12;
+    else if (nhour > 12) nhour -= 12;
+    const timeString = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+    document.getElementById('clockbox').innerHTML = timeString;
+    let greeting;
+    if (d.getHours() < 12) greeting = "สวัสดีตอนเช้าครับ🙏";
+    else if (d.getHours() === 12) greeting = "สวัสดีตอนเที่ยงครับ🙏";
+    else if (d.getHours() >= 13 && d.getHours() <= 17) greeting = "สวัสดีตอนบ่าย🙏";
+    else greeting = "สวัสดีตอนเย็น🙏";
+    document.getElementById('greetingbox').innerHTML = greeting;
+    setTimeout(GetClock, 1000);
+  }
+  window.onload = GetClock;
+</script>
+</body>
+</html>
+
+#content.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        img { max-width: 100%; height: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        table, th, td { border: 1px solid black; padding: 8px; text-align: left; }
+        pre { white-space: pre-wrap; font-family: monospace; }
+    </style>
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('home.home') }}">หน้าแรก</a>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('home.home') }}">หน้าแรก</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ title }}</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="container mt-4">
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <h1 class="card-title text-primary">{{ title }}</h1>
+            <hr>
+
+            {% if content.startswith("media_file=") %}
+                {% set media_file = content.split("=")[1].strip() %}
+                {% set media_url = url_for('media_file', filename=media_file) %}
+                <p><strong>URL ของไฟล์:</strong> <a href="{{ media_url }}" target="_blank">{{ media_url }}</a></p>
+                {% set ext = media_file.split('.')[-1].lower() %}
+
+                {% if ext in ["mp3", "wav", "ogg"] %}
+                    <audio id="media_player" controls preload="metadata">
+                        <source src="{{ media_url }}" type="audio/{{ ext }}">
+                        เบราว์เซอร์ของคุณไม่รองรับการเล่นไฟล์เสียง
+                    </audio>
+                {% elif ext in ["mp4", "mov"] %}
+                    <video id="media_player" width="600" controls>
+                        <source src="{{ media_url }}" type="video/{{ ext }}">
+                        เบราว์เซอร์ของคุณไม่รองรับการเล่นวิดีโอ
+                    </video>
+                {% endif %}
+            {% else %}
+                <div class="card-text">{{ content | safe }}</div>
+
+                <!-- 🔊 เพิ่มระบบ TTS -->
+                <div class="d-flex justify-content-center mt-4">
+                    {% if tts_url %}
+                        <div class="text-center">
+                            <h5>🔊 ฟังเสียงบทความ</h5>
+                            <audio id="tts_audio" controls>
+                                <source src="{{ tts_url }}" type="audio/mpeg">
+                                ไม่สามารถเล่นเสียงได้
+                            </audio>
+                            <script>
+                                const audio = document.getElementById("tts_audio");
+                                audio.playbackRate = 1.5;  // ✅ ปรับความเร็วที่นี่ (1.0 = ปกติ, 1.2 = เร็วขึ้นนิดนึง)
+                            </script>
+                        </div>
+                    {% else %}
+                        <form action="{{ url_for('content.generate_tts', article_id=article_id) }}" method="get">
+                            <button type="submit" class="btn btn-primary">🔊 สร้างเสียงอ่านบทความ</button>
+                        </form>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<button onclick="topFunction()" id="backToTop" class="btn btn-primary rounded-circle position-fixed bottom-0 end-0 m-3" style="display: none;">⬆</button>
+
+<footer class="bg-dark text-white text-center py-3 mt-5">
+    <p>© 2025 เว็บไซต์ของคุณ. สงวนลิขสิทธิ์.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let backToTopButton = document.getElementById("backToTop");
+    window.onscroll = function() {
+        backToTopButton.style.display = (document.documentElement.scrollTop > 200) ? "block" : "none";
+    };
+    function topFunction() {
+        document.documentElement.scrollTop = 0;
+    }
+</script>
+</body>
+</html>
+
+#edit_account.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>แก้ไขข้อมูลส่วนตัว</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>แก้ไขข้อมูลส่วนตัว</h1>
+        <form action="{{ url_for('account.edit_account') }}" method="POST" enctype="multipart/form-data">
+            <label for="firstname">ชื่อ:</label>
+            <input type="text" name="firstname" value="{{ user['firstname'] }}" required>
+            
+            <label for="lastname">นามสกุล:</label>
+            <input type="text" name="lastname" value="{{ user['lastname'] }}" required>
+
+            <label for="email">อีเมล:</label>
+            <input type="email" name="email" value="{{ user['email'] }}" required>
+
+            <label for="phone">เบอร์โทรศัพท์:</label>
+            <input type="text" name="phone" value="{{ user['phone'] }}" required>
+
+            <label for="address_permanent">ที่อยู่ตามทะเบียนบ้าน:</label>
+            <input type="text" name="address_permanent" value="{{ user['address_permanent'] }}" required>
+
+            <label for="address_current">ที่อยู่ปัจจุบัน:</label>
+            <input type="text" name="address_current" value="{{ user['address_current'] }}" required>
+
+            <label for="dob">วันเดือนปีเกิด:</label>
+            <input type="date" name="dob" value="{{ user['dob'] }}" required>
+
+            <label for="profile_picture">อัปโหลดรูปโปรไฟล์ใหม่:</label>
+            <input type="file" name="profile_picture" accept="image/*">
+
+            <input type="submit" value="อัปเดตข้อมูล">
+        </form>
+
+        <a href="{{ url_for('account.account') }}">ย้อนกลับ</a>
+    </div>
+</body>
+</html>
+
+#edit_post.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>edit post</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+  <h1>แก้ไขโพสต์: {{ post_title }}</h1>
+  <form method="POST">
+      <textarea name="new_content" required>{{ post_content }}</textarea>
+      <button type="submit">บันทึกการแก้ไข</button>
+  </form>
+    </div>
+</body>
+</html>
+
+#index.html
+{% extends "base.html" %}
+
+{% block title %}หน้าหลัก{% endblock %}
+{% block page_heading %}หน้าหลัก{% endblock %}
+
+{% block content %}
+<!-- ✅ ส่วนแสดงบทความเด่น -->
+{% if title_contents %}
+<div class="container mt-5">
+    <h2 class="text-center text-success">🌟 </h2>
+    <div class="row">
+        {% for item in title_contents %}
+        <div class="col-md-12 mb-4">
+            <div class="card shadow-sm border-success">
+                <div class="card-body">
+                    <h3 class="text-success"><i class="fa-solid fa-star text-warning"></i> {{ item.heading }}</h3>
+                    <p class="text-dark fs-5" style="line-height: 1.6;">{{ item.content | safe }}</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ✅ ส่วนแสดงหมวดหมู่หลัก -->
+<div class="container mt-5">
+    <h2 class="text-center text-primary">📂 หมวดหมู่หลัก</h2>
+    <div class="row">
+        {% for category_id, category_data in categories %}
+        <div class="col-md-4 mb-3">
+            <div class="card category-card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">{{ category_data["name"] }}</h5>
+                    {% if category_data["subcategories"] %}
+                    <ul class="list-group">
+                        {% for sub_id, sub_name in category_data["subcategories"] %}
+                        <li class="list-group-item">
+                            <a href="{{ url_for('service.service', category_id=sub_id) }}" class="text-decoration-none">
+                                <i class="fas fa-folder"></i> {{ sub_name }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted">ไม่มีหมวดหมู่ย่อย</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- ✅ บทความล่าสุด -->
+<div class="container mt-5">
+    <h2 class="text-center text-secondary">📰 บทความล่าสุด</h2>
+    <ul class="list-group">
+        {% for id, title in latest_articles %}
+        <li class="list-group-item">
+            <a href="{{ url_for('content.content', article_id=id) }}" class="text-decoration-none">
+                <i class="fas fa-file-alt"></i> {{ title }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}
+
+#index2.html
+{% extends "base.html" %}
+
+{% block title %}Forum{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-primary">📢 Forum</h1>
+    <div id="greetingbox" class="my-2"></div>
+
+<div class="container mt-4">
+    <h2>📌 หมวดหมู่ Forum</h2>
+    <ul class="list-group list-group-flush">
+        {% for service_id, service_name in service_centers.items() %}
+            <li class="list-group-item">
+                <a href="{{ url_for('service_center', service_id=service_id) }}">
+                    🗂️ {{ service_name }}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<div class="container mt-5">
+    <h2>⭐ โพสต์แนะนำประจำสัปดาห์</h2>
+    <ul class="list-group">
+        {% for post in latest_posts %}
+            <li class="list-group-item">
+                <h5>{{ post.title }}</h5>
+                <div style="white-space: pre-line;">{{ post.content|safe }}</div>
+
+                {% if post_images[post.title] %}
+                    <div class="post-images mt-2 mb-2">
+                        {% for image in post_images[post.title] %}
+                            <img src="{{ url_for('static', filename='uploads/' + post.title + '/' + image) }}" alt="Post Image" width="150px" class="me-2 mb-2 rounded">
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">ไม่มีรูปภาพแนบ</p>
+                {% endif %}
+
+                <a href="{{ url_for('post_actions', service_id=post.service_id, post_title=post.title) }}" class="btn btn-sm btn-outline-primary">อ่านต่อ</a>
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    function GetClock() {
+        const d = new Date();
+        let nhour = d.getHours();
+        const nmin = d.getMinutes().toString().padStart(2, '0');
+        const nsec = d.getSeconds().toString().padStart(2, '0');
+        const ap = nhour < 12 ? " AM" : " PM";
+
+        if (nhour === 0) nhour = 12;
+        else if (nhour > 12) nhour -= 12;
+
+        const timeString = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+        document.getElementById('clockbox').innerHTML = timeString;
+
+        let greeting;
+        if (d.getHours() < 12) greeting = "สวัสดีตอนเช้าครับ🙏";
+        else if (d.getHours() === 12) greeting = "สวัสดีตอนเที่ยงครับ🙏";
+        else if (d.getHours() >= 13 && d.getHours() <= 17) greeting = "สวัสดีตอนบ่าย🙏";
+        else greeting = "สวัสดีตอนเย็น🙏";
+        document.getElementById('greetingbox').innerHTML = greeting;
+
+        setTimeout(GetClock, 1000);
+    }
+    window.onload = GetClock;
+</script>
+{% endblock %}
+
+#login.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>เข้าสู่ระบบ</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+  <div class="container">
+    <a href="/" accesskey="h"title="Clear [Alt+H]">หน้าแรก (Home)</a>
+    <h1>เข้าสู่ระบบ</h1>
+    <form method="POST" action="{{ url_for('login') }}">
+        <label for="email">อีเมล:</label><br>
+        <input type="email" id="email" name="email" required><br><br>
+        <label for="password">รหัสผ่าน:</label><br>
+        <input type="password" id="password" name="password" required><br><br>
+        <button type="submit">เข้าสู่ระบบ</button>
+        <p>หรือ</>
+        <a href="{{ url_for('register') }}"><button>สมัครสมาชิก</button></a>
+    </form>
+  </div>
+</body>
+</html>
+
+#manage_users.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>จัดการผู้ใช้</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+  <div class="container">
+    <h1>จัดการผู้ใช้</h1>
+    <p><a href="{{ url_for('home.home') }}">กลับไปยังหน้าแรก</a></p>
+
+    <h2>รายชื่อผู้ใช้ทั้งหมด</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ชื่อเต็ม</th>
+                <th>จัดการ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+                <tr>
+                    <td>{{ user.firstname }} {{ user.lastname }}</td>
+                    <td>
+                        <a href="{{ url_for('user_details', id=user.id) }}">ดูรายละเอียด</a>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+  </div>
+</body>
+</html>
+
+#post_actions.html
+{% extends "base.html" %}
+
+{% block title %}รายละเอียดโพสต์ - {{ post_title }}{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('home.home') }}" class="btn btn-outline-secondary mb-3">← กลับหน้าแรก</a>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h3 class="card-title">
+            <img src="{{ url_for('static', filename='uploads/' + post_owner_profile_picture) }}"
+                 class="rounded-circle me-2" width="50" height="50" alt="Profile Picture">
+            {{ post_title }}
+        </h3>
+        <div id="post-content" class="card-text mt-3"></div>
+    </div>
+</div>
+
+<script>
+    const rawContent = `{{ post_content | e }}`;
+    document.getElementById('post-content').innerHTML = rawContent.replace(/\n/g, '<br>');
+</script>
+
+{% if post_images %}
+<div class="image-grid mb-4">
+    {% for image_file in post_images %}
+        <img src="{{ url_for('static', filename='uploads/' + post_title + '/' + image_file) }}"
+             alt="Attached Image" class="img-thumbnail">
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="like-buttons mt-2" data-post-title="{{ post_title }}" data-service-id="{{ service_id }}">
+    <button class="btn btn-outline-success btn-sm like-btn">👍 ถูกใจ</button>
+    <span class="like-count">0</span>
+    <button class="btn btn-outline-danger btn-sm dislike-btn ms-2">👎 ไม่ถูกใจ</button>
+    <span class="dislike-count">0</span>
+</div>
+
+<!-- แชร์ลิงก์ -->
+<div class="mt-3">
+  <button class="btn btn-info" onclick="sharePost()">🔗 แชร์โพสต์</button>
+</div>
+
+<script>
+  function sharePost() {
+    const link = window.location.href;
+    navigator.clipboard.writeText(link).then(() => {
+      alert("📎 ลิงก์โพสต์ถูกคัดลอกเรียบร้อยแล้ว!");
+    });
+  }
+</script>
+
+
+<!-- 🔽 แสดงคอมเมนต์ -->
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        💬 ความคิดเห็นทั้งหมด
+    </div>
+    <div class="card-body">
+        {% if comments %}
+            {% for comment in comments %}
+                <div class="border-bottom pb-3 mb-3">
+                    <img src="{{ url_for('static', filename='uploads/' + comment.profile_picture) }}"
+                         alt="Profile Picture" class="rounded-circle me-2" width="40" height="40">
+                    <strong>{{ comment.author }}</strong> <br>
+                    <small class="text-muted">🕒 {{ comment.time }}</small>
+                    <p class="mt-2">{{ comment.content }}</p>
+
+                    {% if 'user_id' in session and user.rank != 'user_default' %}
+                        <a href="{{ url_for('user_details', id=comment.user_id) }}" class="btn btn-link btn-sm">ดูโปรไฟล์</a>
+                    {% endif %}
+
+                    {% if user and comment.author == user.firstname + ' ' + user.lastname %}
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-primary me-1"
+                                    onclick="toggleEditForm('edit-form-{{ loop.index }}')">แก้ไข</button>
+                            <form action="{{ url_for('delete_comment', service_id=service_id, post_title=post_title, comment_time=comment.time) }}"
+                                  method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">ลบ</button>
+                            </form>
+
+                            <form id="edit-form-{{ loop.index }}"
+                                  action="{{ url_for('edit_comment', service_id=service_id, post_title=post_title, comment_time=comment.time) }}"
+                                  method="POST" class="mt-2" style="display: none;">
+                                <textarea name="new_content" class="form-control mb-2">{{ comment.content }}</textarea>
+                                <button type="submit" class="btn btn-sm btn-success">💾 บันทึกการแก้ไข</button>
+                            </form>
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">ยังไม่มีคอมเมนต์</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 🔽 ฟอร์มคอมเมนต์ใหม่ -->
+<div class="card mb-5">
+    <div class="card-header bg-light">✍️ แสดงความคิดเห็น</div>
+    <div class="card-body">
+        <form action="{{ url_for('post_actions', service_id=service_id, post_title=post_title) }}" method="POST">
+            <textarea name="comment" class="form-control mb-2" rows="4" placeholder="เขียนคอมเมนต์ที่นี่..." required></textarea>
+            <button type="submit" class="btn btn-primary">โพสต์คอมเมนต์</button>
+        </form>
+    </div>
+</div>
+
+<!-- 🔽 การจัดการโพสต์ -->
+{% if is_owner %}
+    <div class="d-flex justify-content-between align-items-center mb-5">
+        <a href="{{ url_for('edit_post', service_id=service_id, post_title=post_title) }}"
+           class="btn btn-warning">✏️ แก้ไขโพสต์</a>
+
+        <form action="{{ url_for('delete_post', service_id=service_id, post_title=post_title) }}" method="POST">
+            <button type="submit" class="btn btn-danger">🗑️ ลบโพสต์</button>
+        </form>
+    </div>
+{% endif %}
+
+<style>
+.image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+.image-grid img {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+    border-radius: 8px;
+}
+</style>
+
+<script>
+function toggleEditForm(formId) {
+    const form = document.getElementById(formId);
+    form.style.display = (form.style.display === "none" || !form.style.display) ? "block" : "none";
+}
+</script>
+
+<script>
+document.querySelectorAll('.like-buttons').forEach(group => {
+    const post_title = group.dataset.postTitle;
+    const service_id = group.dataset.serviceId;
+    const likeBtn = group.querySelector('.like-btn');
+    const dislikeBtn = group.querySelector('.dislike-btn');
+    const likeCount = group.querySelector('.like-count');
+    const dislikeCount = group.querySelector('.dislike-count');
+
+    function sendLike(is_like) {
+        fetch('/like_post', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ post_title, service_id, is_like })
+        })
+        .then(res => res.json())
+        .then(data => {
+            likeCount.textContent = data.likes;
+            dislikeCount.textContent = data.dislikes;
+        });
+    }
+
+    likeBtn.addEventListener('click', () => sendLike(true));
+    dislikeBtn.addEventListener('click', () => sendLike(false));
+});
+</script>
+
+{% endblock %}
+
+#register.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>สมัครสมาชิก</title>
+</head>
+<body>
+    <a href="/" accesskey="h"title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>สมัครสมาชิก</h1>
+<form action="{{ url_for('register') }}" method="POST" enctype="multipart/form-data">
+    <!-- ชื่อจริง -->
+    <label for="firstname">ชื่อจริง:</label>
+    <input type="text" name="firstname" id="firstname" required>
+
+    <!-- นามสกุล -->
+    <label for="lastname">นามสกุล:</label>
+    <input type="text" name="lastname" id="lastname" required>
+
+    <!-- อีเมล -->
+    <label for="email">อีเมล:</label>
+    <input type="email" name="email" id="email" required>
+
+    <!-- รหัสผ่าน -->
+    <label for="password">รหัสผ่าน:</label>
+    <input type="password" name="password" id="password" required>
+
+    <!-- เบอร์โทรศัพท์ -->
+    <label for="phone">เบอร์โทรศัพท์:</label>
+    <input type="text" name="phone" id="phone" required>
+
+    <!-- ที่อยู่ถาวร -->
+    <label for="address_permanent">ที่อยู่ถาวร:</label>
+    <input type="text" name="address_permanent" id="address_permanent" required>
+
+    <!-- ที่อยู่ปัจจุบัน -->
+    <label for="address_current">ที่อยู่ปัจจุบัน:</label>
+    <input type="text" name="address_current" id="address_current" required>
+
+    <!-- วันเดือนปีเกิด -->
+    <label for="dob">วันเดือนปีเกิด:</label>
+    <input type="date" name="dob" id="dob" required>
+
+    <!-- แนบรูปภาพ -->
+    <label for="profile_picture">รูปโปรไฟล์:</label>
+    <input type="file" name="profile_picture" accept="image/*" required>
+
+    <!-- ปุ่มส่งฟอร์ม -->
+    <input type="submit" value="สมัครสมาชิก">
+</form>
+
+    </div>
+</body>
+</html>
+
+#search.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ผลการค้นหา - {{ query }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+
+<div class="container mt-4">
+    <h2 class="text-primary">ผลการค้นหา: "{{ query }}"</h2>
+    <hr>
+
+    {% if results %}
+        <ul class="list-group">
+            {% for article in results %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('content.content', article_id=article['id']) }}">
+                        <h5 class="mb-1">{{ article['title'] }}</h5>
+                    </a>
+                    <p class="mb-0">{{ article['content'][:100] }}...</p>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="text-muted">ไม่พบผลลัพธ์</p>
+    {% endif %}
+</div>
+
+</body>
+</html>
+
+#service.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ category_name }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+    <div class="container mt-4">
+        <h1 class="text-primary">{{ category_name }}</h1>
+
+        <h2>หมวดหมู่ย่อย</h2>
+        <ul class="list-group">
+            {% for id, name in subcategories %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('service', category_id=id) }}" class="text-decoration-none">
+                        <i class="fas fa-folder"></i> {{ name }}
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+
+        <h2 class="mt-4">บทความ</h2>
+        <ul class="list-group">
+            {% for id, title, updated_at in articles %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('content.content', article_id=id) }}" class="text-decoration-none">
+                        <i class="fas fa-file-alt"></i> {{ title }}
+                    </a>
+                    <br>
+                    <small class="text-muted updated-time" data-time="{{ updated_at }}">📅 อัปเดตล่าสุด: กำลังโหลด...</small>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        document.querySelectorAll(".updated-time").forEach(function(el) {
+            let rawTime = el.getAttribute("data-time");
+
+            // ตรวจสอบว่าเป็น Timestamp (Unix Time) หรือเป็น String (YYYY-MM-DD HH:MM:SS)
+            let timestamp;
+            if (!isNaN(rawTime) && rawTime.length >= 10) {
+                timestamp = parseInt(rawTime) * 1000; // ถ้าเป็น Unix Time → คูณ 1000 เพื่อแปลงเป็น milliseconds
+            } else {
+                timestamp = Date.parse(rawTime); // ถ้าเป็นรูปแบบ String → แปลงเป็น Timestamp
+            }
+
+            if (!isNaN(timestamp)) {
+                let dateObj = new Date(timestamp);
+
+                let options = { 
+                    year: "numeric", 
+                    month: "long", 
+                    day: "numeric",
+                    hour: "2-digit", 
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: false
+                };
+
+                let formattedDate = new Intl.DateTimeFormat("th-TH", options).format(dateObj);
+                el.innerText = `📅 อัปเดตล่าสุด: ${formattedDate}`;
+            } else {
+                el.innerText = "📅 อัปเดตล่าสุด: ไม่สามารถแปลงวันที่ได้";
+            }
+        });
+    });
+    </script>
+
+</body>
+</html>
+
+#service_center.html
+{% extends "base.html" %}
+
+{% block title %}{{ service_name }} - ศูนย์บริการ{% endblock %}
+
+{% block content %}
+<h1 class="mb-3 text-primary">📍 คุณกำลังรับชมอยู่หน้า: {{ service_name }}</h1>
+<div id="clockbox" class="mb-3 fw-bold"></div>
+
+<script>
+    const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    function GetClock() {
+        const d = new Date();
+        let nhour = d.getHours();
+        const nmin = d.getMinutes().toString().padStart(2, '0');
+        const nsec = d.getSeconds().toString().padStart(2, '0');
+        const ap = nhour < 12 ? " AM" : " PM";
+        if (nhour === 0) nhour = 12;
+        else if (nhour > 12) nhour -= 12;
+        document.getElementById('clockbox').innerHTML = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+        setTimeout(GetClock, 1000);
+    }
+    window.onload = GetClock;
+</script>
+
+{% if greeting %}
+    <div class="alert alert-info">
+        {{ greeting }}
+        {% if greeting == "คุณยังไม่ได้เป็นสมาชิก" %}
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm ms-2">เข้าสู่ระบบ</a>
+            <a href="{{ url_for('register') }}" class="btn btn-outline-secondary btn-sm ms-1">สมัครสมาชิก</a>
+        {% else %}
+            <a href="{{ url_for('account') }}" class="btn btn-success btn-sm ms-2">บัญชีของฉัน</a>
+            {% if 'user_id' in session and user.rank == 'user_administrator_and_manage_systems' %}
+                <a href="{{ url_for('manage_users') }}" class="btn btn-warning btn-sm ms-1">จัดการบัญชี</a>
+            {% endif %}
+        {% endif %}
+    </div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        📝 โพสต์คำถามหรือพูดคุย
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('post_service_center', service_id=service_id) }}" method="POST" enctype="multipart/form-data">
+            <label for="title" class="form-label">หัวเรื่อง:</label>
+            <input type="text" id="title" name="title" class="form-control" required>
+
+            <label for="content" class="form-label mt-3">เนื้อหา:</label>
+            <textarea id="content" name="content" rows="4" class="form-control" required></textarea>
+
+            <label for="image" class="form-label mt-3">แนบรูปภาพ (ถ้ามี):</label>
+            <input type="file" id="image" name="image" class="form-control" multiple>
+
+            <button type="submit" class="btn btn-primary mt-3">📨 โพสต์</button>
+        </form>
+    </div>
+</div>
+
+<div class="mb-4">
+    <h2 class="text-success">📘 ข้อมูลแนะนำจากศูนย์บริการ</h2>
+    <p>{{ service_intro }}</p>
+</div>
+
+<h2 class="text-secondary mb-3">📂 กระทู้ในศูนย์บริการ</h2>
+{% for post in posts %}
+    <div class="post-container">
+        <h4>
+            <img src="{{ url_for('static', filename='uploads/' + post.profile_picture) }}"
+                 alt="Profile" style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%;">
+            {{ post.title }}
+        </h4>
+        <p class="text-muted">🧑 โพสต์โดย: {{ post.author }} (ระดับ: {{ post.rank }})</p>
+        <div class="mb-2" style="white-space: pre-line;">{{ post.content|safe }}</div>
+
+        {% if post_images[post.title] %}
+            <div class="mb-2">
+                <p class="mb-1">🖼️ รูปภาพที่แนบ:</p>
+                {% for image_file in post_images[post.title] %}
+                    <img src="{{ url_for('static', filename='uploads/' + post.title + '/' + image_file) }}"
+                         alt="Attached Image" class="img-thumbnail me-2" style="max-width: 300px;">
+                {% endfor %}
+            </div>
+        {% endif %}
+        <a href="{{ url_for('post_actions', service_id=service_id, post_title=post.title) }}" class="btn btn-outline-primary btn-sm">📖 อ่านต่อ</a>
+    </div>
+{% endfor %}
+{% endblock %}
+
+#signup.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>สมัครสมาชิก</title>
+</head>
+<body>
+    <h1>สมัครสมาชิก</h1>
+    <form action="/submit_signup" method="POST">
+        <label for="firstname">ชื่อจริง:</label>
+        <input type="text" id="firstname" name="firstname" required><br>
+
+        <label for="lastname">นามสกุล:</label>
+        <input type="text" id="lastname" name="lastname" required><br>
+
+        <label for="email">อีเมล:</label>
+        <input type="email" id="email" name="email" required><br>
+
+        <label for="password">รหัสผ่าน:</label>
+        <input type="password" id="password" name="password" required><br>
+
+        <label for="phone">เบอร์โทรศัพท์:</label>
+        <input type="tel" id="phone" name="phone" required><br>
+
+        <label for="home_address">ที่อยู่ตามทะเบียนบ้าน:</label><br>
+        <textarea id="home_address" name="home_address" rows="3" required></textarea><br>
+
+        <label for="current_address">ที่อยู่ปัจจุบัน:</label><br>
+        <textarea id="current_address" name="current_address" rows="3" required></textarea><br>
+
+        <button type="submit">สมัครสมาชิก</button>
+    </form>
+</body>
+</html>
+
+#user_details.html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>รายละเอียดผู้ใช้</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+  <div class="container">
+    <h1>รายละเอียดผู้ใช้</h1>
+    <p><a href="{{ url_for('manage_users') }}">กลับไปยังจัดการผู้ใช้</a></p>
+
+    <h2>ข้อมูลของ {{ user.firstname }} {{ user.lastname }}</h2>
+    <p>อีเมล: {{ user.email }}</p>
+    <p>โทรศัพท์: {{ user.phone }}</p>
+    <p>ที่อยู่ตามทะเบียนบ้าน: {{ user.address_permanent }}</p>
+    <p>ที่อยู่ปัจจุบัน: {{ user.address_current }}</p>
+    <p>วันเดือนปีเกิด: {{ user.dob }}</p>
+    <p>ระดับ: {{ user.rank }}</p>
+    <p>วันลงทะเบียน: {{ user.registered_date }}</p>
+
+    <h3>เปลี่ยนระดับผู้ใช้</h3>
+    <form method="POST">
+        <select name="rank">
+            <option value="user_default" {% if user.rank == 'user_default' %}selected{% endif %}>User Default</option>
+            <option value="user_admin" {% if user.rank == 'user_admin' %}selected{% endif %}>User Admin</option>
+        </select>
+        <button type="submit">เปลี่ยนระดับ</button>
+    </form>
+  </div>
+</body>
+</html>
+

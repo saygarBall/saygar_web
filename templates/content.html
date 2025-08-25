@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        img { max-width: 100%; height: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        table, th, td { border: 1px solid black; padding: 8px; text-align: left; }
+        pre { white-space: pre-wrap; font-family: monospace; }
+    </style>
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('home.home') }}">หน้าแรก</a>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('home.home') }}">หน้าแรก</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ title }}</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="container mt-4">
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <h1 class="card-title text-primary">{{ title }}</h1>
+            <hr>
+
+            {% if content.startswith("media_file=") %}
+                {% set media_file = content.split("=")[1].strip() %}
+                {% set media_url = url_for('media_file', filename=media_file) %}
+                <p><strong>URL ของไฟล์:</strong> <a href="{{ media_url }}" target="_blank">{{ media_url }}</a></p>
+                {% set ext = media_file.split('.')[-1].lower() %}
+
+                {% if ext in ["mp3", "wav", "ogg"] %}
+                    <audio id="media_player" controls preload="metadata">
+                        <source src="{{ media_url }}" type="audio/{{ ext }}">
+                        เบราว์เซอร์ของคุณไม่รองรับการเล่นไฟล์เสียง
+                    </audio>
+                {% elif ext in ["mp4", "mov"] %}
+                    <video id="media_player" width="600" controls>
+                        <source src="{{ media_url }}" type="video/{{ ext }}">
+                        เบราว์เซอร์ของคุณไม่รองรับการเล่นวิดีโอ
+                    </video>
+                {% endif %}
+            {% else %}
+                <div class="card-text">{{ content | safe }}</div>
+
+                <!-- 🔊 เพิ่มระบบ TTS -->
+                <div class="d-flex justify-content-center mt-4">
+                    {% if tts_url %}
+                        <div class="text-center">
+                            <h5>🔊 ฟังเสียงบทความ</h5>
+                            <audio id="tts_audio" controls>
+                                <source src="{{ tts_url }}" type="audio/mpeg">
+                                ไม่สามารถเล่นเสียงได้
+                            </audio>
+                            <script>
+                                const audio = document.getElementById("tts_audio");
+                                audio.playbackRate = 1.5;  // ✅ ปรับความเร็วที่นี่ (1.0 = ปกติ, 1.2 = เร็วขึ้นนิดนึง)
+                            </script>
+                        </div>
+                    {% else %}
+                        <form action="{{ url_for('content.generate_tts', article_id=article_id) }}" method="get">
+                            <button type="submit" class="btn btn-primary">🔊 สร้างเสียงอ่านบทความ</button>
+                        </form>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<button onclick="topFunction()" id="backToTop" class="btn btn-primary rounded-circle position-fixed bottom-0 end-0 m-3" style="display: none;">⬆</button>
+
+<footer class="bg-dark text-white text-center py-3 mt-5">
+    <p>© 2025 เว็บไซต์ของคุณ. สงวนลิขสิทธิ์.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let backToTopButton = document.getElementById("backToTop");
+    window.onscroll = function() {
+        backToTopButton.style.display = (document.documentElement.scrollTop > 200) ? "block" : "none";
+    };
+    function topFunction() {
+        document.documentElement.scrollTop = 0;
+    }
+</script>
+</body>
+</html>

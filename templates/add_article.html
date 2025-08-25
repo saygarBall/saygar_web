@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4">📝 เพิ่มบทความใหม่</h2>
+    <form method="POST" action="{{ url_for('add_article') }}">
+        <div class="mb-3">
+            <label for="title" class="form-label">ชื่อบทความ</label>
+            <input type="text" class="form-control" id="title" name="title" required>
+        </div>
+        <div class="mb-3">
+            <label for="content" class="form-label">เนื้อหา</label>
+            <textarea class="form-control" id="content" name="content" rows="8" required></textarea>
+        </div>
+        <div class="mb-3">
+            <label for="category_id" class="form-label">หมวดหมู่</label>
+            <select class="form-select" id="category_id" name="category_id" required>
+                {% for id, name in categories %}
+                <option value="{{ id }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-success">✅ บันทึกบทความ</button>
+    </form>
+</div>
+{% endblock %}

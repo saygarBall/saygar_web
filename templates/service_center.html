@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}{{ service_name }} - ศูนย์บริการ{% endblock %}
+
+{% block content %}
+<h1 class="mb-3 text-primary">📍 คุณกำลังรับชมอยู่หน้า: {{ service_name }}</h1>
+<div id="clockbox" class="mb-3 fw-bold"></div>
+
+<script>
+    const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    function GetClock() {
+        const d = new Date();
+        let nhour = d.getHours();
+        const nmin = d.getMinutes().toString().padStart(2, '0');
+        const nsec = d.getSeconds().toString().padStart(2, '0');
+        const ap = nhour < 12 ? " AM" : " PM";
+        if (nhour === 0) nhour = 12;
+        else if (nhour > 12) nhour -= 12;
+        document.getElementById('clockbox').innerHTML = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+        setTimeout(GetClock, 1000);
+    }
+    window.onload = GetClock;
+</script>
+
+{% if greeting %}
+<div class="alert alert-info">
+    {{ greeting }}
+    {% if greeting == "คุณยังไม่ได้เป็นสมาชิก" %}
+        <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm ms-2">เข้าสู่ระบบ</a>
+        <a href="{{ url_for('register') }}" class="btn btn-outline-secondary btn-sm ms-1">สมัครสมาชิก</a>
+    {% else %}
+        <a href="{{ url_for('account') }}" class="btn btn-success btn-sm ms-2">บัญชีของฉัน</a>
+        {% if 'user_id' in session and user.rank == 'user_administrator_and_manage_systems' %}
+            <a href="{{ url_for('manage_users') }}" class="btn btn-warning btn-sm ms-1">จัดการบัญชี</a>
+        {% endif %}
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-header bg-light">
+        📝 โพสต์คำถามหรือพูดคุย
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('post_service_center', service_id=service_id) }}" method="POST" enctype="multipart/form-data">
+            <label for="title" class="form-label">หัวเรื่อง:</label>
+            <input type="text" id="title" name="title" class="form-control" required>
+
+            <label for="content" class="form-label mt-3">เนื้อหา:</label>
+            <textarea id="content" name="content" rows="4" class="form-control" required></textarea>
+
+            <label for="image" class="form-label mt-3">แนบรูปภาพ (ถ้ามี):</label>
+            <input type="file" id="image" name="image" class="form-control" multiple>
+
+            <button type="submit" class="btn btn-primary mt-3">📨 โพสต์</button>
+        </form>
+    </div>
+</div>
+
+<div class="mb-4">
+    <h2 class="text-success">📘 ข้อมูลแนะนำจากศูนย์บริการ</h2>
+    <p>{{ service_intro }}</p>
+</div>
+
+<h2 class="text-secondary mb-3">📂 กระทู้ในศูนย์บริการ</h2>
+
+{% for post in posts %}
+<div class="post-container mb-4 p-3 border rounded bg-white">
+    <h4>
+        {% if post.profile_picture %}
+            <img src="{{ url_for('static', filename='uploads/' + post.profile_picture) }}"
+                 alt="Profile" style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%;">
+        {% else %}
+            <img src="{{ url_for('static', filename='uploads/default_profile.png') }}"
+                 alt="Default Profile" style="width: 40px; height: 40px; object-fit: cover; border-radius: 50%;">
+        {% endif %}
+        {{ post.title }}
+    </h4>
+
+    <p class="text-muted">🧑 โพสต์โดย: {{ post.author }} (ระดับ: {{ post.rank }})</p>
+
+    <div class="mb-2" style="white-space: pre-line;">{{ post.content|safe }}</div>
+
+    {% if post_images[post.title] %}
+    <div class="mb-2">
+        <p class="mb-1">🖼️ รูปภาพที่แนบ:</p>
+        {% for image_file in post_images[post.title] %}
+            <img src="{{ url_for('static', filename='uploads/' + post.title + '/' + image_file) }}"
+                 alt="Attached Image" class="img-thumbnail me-2 mb-2" style="max-width: 300px;">
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <a href="{{ url_for('post_actions', service_id=service_id, post_title=post.title) }}" class="btn btn-outline-primary btn-sm mt-2">📖 อ่านต่อ</a>
+</div>
+{% endfor %}
+
+{% endblock %}

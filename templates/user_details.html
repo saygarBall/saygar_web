@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>รายละเอียดผู้ใช้</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+  <div class="container">
+    <h1>รายละเอียดผู้ใช้</h1>
+    <p><a href="{{ url_for('manage_users') }}">กลับไปยังจัดการผู้ใช้</a></p>
+
+    <h2>ข้อมูลของ {{ user.firstname }} {{ user.lastname }}</h2>
+    <p>อีเมล: {{ user.email }}</p>
+    <p>โทรศัพท์: {{ user.phone }}</p>
+    <p>ที่อยู่ตามทะเบียนบ้าน: {{ user.address_permanent }}</p>
+    <p>ที่อยู่ปัจจุบัน: {{ user.address_current }}</p>
+    <p>วันเดือนปีเกิด: {{ user.dob }}</p>
+    <p>ระดับ: {{ user.rank }}</p>
+    <p>วันลงทะเบียน: {{ user.registered_date }}</p>
+
+    <h3>เปลี่ยนระดับผู้ใช้</h3>
+    <form method="POST">
+        <select name="rank">
+            <option value="user_default" {% if user.rank == 'user_default' %}selected{% endif %}>User Default</option>
+            <option value="user_admin" {% if user.rank == 'user_admin' %}selected{% endif %}>User Admin</option>
+        </select>
+        <button type="submit">เปลี่ยนระดับ</button>
+    </form>
+  </div>
+</body>
+</html>

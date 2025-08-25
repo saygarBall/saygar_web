@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>สมัครสมาชิก</title>
+</head>
+<body>
+    <a href="/" accesskey="h"title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+        <h1>สมัครสมาชิก</h1>
+<form action="{{ url_for('register') }}" method="POST" enctype="multipart/form-data">
+    <!-- ชื่อจริง -->
+    <label for="firstname">ชื่อจริง:</label>
+    <input type="text" name="firstname" id="firstname" required>
+
+    <!-- นามสกุล -->
+    <label for="lastname">นามสกุล:</label>
+    <input type="text" name="lastname" id="lastname" required>
+
+    <!-- อีเมล -->
+    <label for="email">อีเมล:</label>
+    <input type="email" name="email" id="email" required>
+
+    <!-- รหัสผ่าน -->
+    <label for="password">รหัสผ่าน:</label>
+    <input type="password" name="password" id="password" required>
+
+    <!-- เบอร์โทรศัพท์ -->
+    <label for="phone">เบอร์โทรศัพท์:</label>
+    <input type="text" name="phone" id="phone" required>
+
+    <!-- ที่อยู่ถาวร -->
+    <label for="address_permanent">ที่อยู่ถาวร:</label>
+    <input type="text" name="address_permanent" id="address_permanent" required>
+
+    <!-- ที่อยู่ปัจจุบัน -->
+    <label for="address_current">ที่อยู่ปัจจุบัน:</label>
+    <input type="text" name="address_current" id="address_current" required>
+
+    <!-- วันเดือนปีเกิด -->
+    <label for="dob">วันเดือนปีเกิด:</label>
+    <input type="date" name="dob" id="dob" required>
+
+    <!-- แนบรูปภาพ -->
+    <label for="profile_picture">รูปโปรไฟล์:</label>
+    <input type="file" name="profile_picture" accept="image/*" required>
+
+    <!-- ปุ่มส่งฟอร์ม -->
+    <input type="submit" value="สมัครสมาชิก">
+</form>
+
+    </div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Admin - อัปเดตข้อมูลข่าวสาร</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+    <div class="container">
+      <h1>Admin - อัปเดตข้อมูลข่าวสาร</h1>
+      <form action="/post_update" method="POST">
+          <label for="content">เนื้อหา:</label><br>
+          <textarea id="content" name="content" rows="5" cols="50"></textarea><br>
+          <button type="submit">โพสต์</button>
+      </form>
+    </div>
+</body>
+</html>

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Forum{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-primary">📢 Forum</h1>
+    <div id="greetingbox" class="my-2"></div>
+
+<div class="container mt-4">
+    <h2>📌 หมวดหมู่ Forum</h2>
+    <ul class="list-group list-group-flush">
+        {% for service_id, service_name in service_centers.items() %}
+            <li class="list-group-item">
+                <a href="{{ url_for('service_center', service_id=service_id) }}">
+                    🗂️ {{ service_name }}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+
+<div class="container mt-5">
+    <h2>⭐ โพสต์แนะนำประจำสัปดาห์</h2>
+    <ul class="list-group">
+        {% for post in latest_posts %}
+            <li class="list-group-item">
+                <h5>{{ post.title }}</h5>
+                <div style="white-space: pre-line;">{{ post.content|safe }}</div>
+
+                {% if post_images[post.title] %}
+                    <div class="post-images mt-2 mb-2">
+                        {% for image in post_images[post.title] %}
+                            <img src="{{ url_for('static', filename='uploads/' + post.title + '/' + image) }}" alt="Post Image" width="150px" class="me-2 mb-2 rounded">
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">ไม่มีรูปภาพแนบ</p>
+                {% endif %}
+
+                <a href="{{ url_for('post_actions', service_id=post.service_id, post_title=post.title) }}" class="btn btn-sm btn-outline-primary">อ่านต่อ</a>
+            </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const tday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const tmonth = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    function GetClock() {
+        const d = new Date();
+        let nhour = d.getHours();
+        const nmin = d.getMinutes().toString().padStart(2, '0');
+        const nsec = d.getSeconds().toString().padStart(2, '0');
+        const ap = nhour < 12 ? " AM" : " PM";
+
+        if (nhour === 0) nhour = 12;
+        else if (nhour > 12) nhour -= 12;
+
+        const timeString = `${tday[d.getDay()]}, ${tmonth[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${nhour}:${nmin}:${nsec}${ap}`;
+        document.getElementById('clockbox').innerHTML = timeString;
+
+        let greeting;
+        if (d.getHours() < 12) greeting = "สวัสดีตอนเช้าครับ🙏";
+        else if (d.getHours() === 12) greeting = "สวัสดีตอนเที่ยงครับ🙏";
+        else if (d.getHours() >= 13 && d.getHours() <= 17) greeting = "สวัสดีตอนบ่าย🙏";
+        else greeting = "สวัสดีตอนเย็น🙏";
+        document.getElementById('greetingbox').innerHTML = greeting;
+
+        setTimeout(GetClock, 1000);
+    }
+    window.onload = GetClock;
+</script>
+{% endblock %}

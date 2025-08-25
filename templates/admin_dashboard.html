@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}แผงควบคุมผู้ดูแล{% endblock %}
+
+{% block content %}
+<h2 class="text-primary">🛠 แผงควบคุมผู้ดูแลระบบ</h2>
+<hr>
+<a href="{{ url_for('add_article') }}" class="btn btn-outline-success btn-sm">➕ เพิ่มบทความ</a>
+
+<h4>📋 รายการบทความ</h4>
+<table class="table table-bordered table-hover">
+    <thead class="table-light">
+        <tr>
+            <th>ไอดี</th>
+            <th>ชื่อบทความ</th>
+            <th>มีเสียง</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for article in articles %}
+        <tr>
+            <td>{{ article.id }}</td>
+            <td>{{ article.title }}</td>
+            <td>
+                {% if article.tts_exists %}
+                    ✅
+                {% else %}
+                    ❌
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

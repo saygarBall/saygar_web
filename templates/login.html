@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>เข้าสู่ระบบ</title>
+</head>
+<body>
+<a href="/" accesskey="h" title="Clear [Alt+H]">หน้าแรก (Home)</a>
+
+  <div class="container">
+    <a href="/" accesskey="h"title="Clear [Alt+H]">หน้าแรก (Home)</a>
+    <h1>เข้าสู่ระบบ</h1>
+    <form method="POST" action="{{ url_for('login') }}">
+        <label for="email">อีเมล:</label><br>
+        <input type="email" id="email" name="email" required><br><br>
+        <label for="password">รหัสผ่าน:</label><br>
+        <input type="password" id="password" name="password" required><br><br>
+        <button type="submit">เข้าสู่ระบบ</button>
+        <p>หรือ</>
+        <a href="{{ url_for('register') }}"><button>สมัครสมาชิก</button></a>
+    </form>
+  </div>
+</body>
+</html>
