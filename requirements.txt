@@ -220,7 +220,8 @@ PySocks==1.7.1
 PySoundFile==0.9.0.post1
 pytesseract==0.3.10
 pytest==8.3.2
-pythainlp @ https://github.com/PyThaiNLP/pythainlp/archive/dev.zip#sha256=5f55d8cf1c6bdd35d4347a3a290467ab0b7803ebee7576b7a4c1efcb6c2d0faa
+pythainlp @ https://github.com/PyThaiNLP/pythainlp/archive/dev.zip
+
 python-bidi==0.4.2
 python-dateutil==2.8.2
 python-docx==1.1.0
